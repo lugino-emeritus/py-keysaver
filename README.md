@@ -19,11 +19,11 @@ Start the script with `python -i keysaver.py` (or `python3 -i keysaver.py`). It 
 * `copy_pw(name)`: shows username and copy password to clipboard.
 ---
 * `change_pw(name, pw_len = 0)`: changes the password of password-line `name`. If `pw_len > 4` then a random password is used.
-* `edit_pw_line(name, keys = [])`: changes keys (not the password) of a password-line. If the key is not defined, a new key would be added. To delete a existing key insert `'delete!'` as value.
+* `edit_pw_line(name, keys = [])`: changes keys (not the password) of a password-line. If the key is not defined, a new key would be added. To delete a existing key insert `delete!` as value.
 * `delete_pw_line(name)`: deletes password-line
 * `copy_pw_line(name)`: copies a password-line
 ---
-* `get_random_pw(n)`: returns random password (ASCII characters) with at least one upper, one lower character, one number and one symbol. The symbols `^`, `\``, `'`, `"` and the whitespace are not used. Do not forget that '\' is a escape Character in python.
+* `get_random_pw(n)`: returns random password (ASCII characters) with at least one upper, one lower character, one number and one symbol. The symbols `^`, ```, `'`, `"` and the whitespace are not used. Do not forget that '\' is a escape Character in python.
 ---
 * `auto_save_mpw(save = None)`: option to save the master password, so it is only necessary to insert it when starting the script.
 * `add_global_key()` or `remove_global_key()`: encrypt full data, not just password. By default a global key is active.
