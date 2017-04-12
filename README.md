@@ -7,6 +7,7 @@ A master password is used to encrypt the data.
 * tabulate `pip install tabulate`
 * pyscrypt `pip install pyscrypt`
 * _other?_
+
 Maybe it's necessary to use `pip3` instead of `pip`.
 
 ## Usage
@@ -23,7 +24,7 @@ Start the script with `python -i keysaver.py` (or `python3 -i keysaver.py`). It 
 * `delete_pw_line(name)`: deletes password-line
 * `copy_pw_line(name)`: copies a password-line
 ---
-* `get_random_pw(n)`: returns random password (ASCII characters) with at least one upper, one lower character, one number and one symbol. The symbols `^`, ```, `'`, `"` and the whitespace are not used. Do not forget that '\' is a escape Character in python.
+* `get_random_pw(n)`: returns random password (ASCII characters) with at least one upper, one lower character, one number and one symbol. The symbols `^`, `` ` ``, `'`, `` " `` and the whitespace are not used. Do not forget that '\' is a escape Character in python.
 ---
 * `auto_save_mpw(save = None)`: option to save the master password, so it is only necessary to insert it when starting the script.
 * `add_global_key()` or `remove_global_key()`: encrypt full data, not just password. By default a global key is active.
