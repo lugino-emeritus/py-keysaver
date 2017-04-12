@@ -24,7 +24,7 @@ Start the script with `python -i keysaver.py` (or `python3 -i keysaver.py`). It 
 * `delete_pw_line(name)`: deletes password-line
 * `copy_pw_line(name)`: copies a password-line
 ---
-* `get_random_pw(n)`: returns random password (ASCII characters) with at least one upper, one lower character, one number and one symbol. The symbols `^`, `` ` ``, `'`, `` " `` and the whitespace are not used. Do not forget that '\' is a escape Character in python.
+* `get_random_pw(n)`: returns random password (ASCII characters) with at least one upper, one lower character, one number and one symbol. The symbols `^`, `` ` ``, `'`, `` " `` and the whitespace are not used.
 ---
 * `auto_save_mpw(save = None)`: option to save the master password, so it is only necessary to insert it when starting the script.
 * `add_global_key()` or `remove_global_key()`: encrypt full data, not just password. By default a global key is active.
@@ -35,6 +35,7 @@ Start the script with `python -i keysaver.py` (or `python3 -i keysaver.py`). It 
 To enrypt the data AES256 is used (it is possible to add other methods). To get the 32 byte long key for AES it is possible to choose between different hash methods:
 * SHA256
 * scrypt - much more complex compared to SHA256
+
 Only a few bytes of the hashed master password are saved to check the password. So it is possible to use 'wrong' passwords, but then the encrypted data doesn't make sense. Each password is encrypted with the master password and random salt.
 
 ### Random Data
