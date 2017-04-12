@@ -28,7 +28,7 @@ Start the script with `python -i keysaver.py` (or `python3 -i keysaver.py`). It 
 ---
 * `auto_save_mpw(save = None)`: option to save the master password, so it is only necessary to insert it when starting the script.
 * `add_global_key()` or `remove_global_key()`: encrypt full data, not just password. By default a global key is active.
-* `set_mpw()`: changes the password and changes encryption method
+* `set_mpw()`: changes password and encryption method
 
 ## Some Details
 ### Encryption Details
