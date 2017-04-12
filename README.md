@@ -15,11 +15,11 @@ Start the script with `python -i keysaver.py` (or `python3 -i keysaver.py`). It 
 
 ### Commands:
 * `list_pw_lines(keys = ['description', 'username'])`: shows names and info to all saved passwords (password-lines). `keys = 'all'` would show all keywords.
-* `add_pw_line(pw_len = 0)`: adds new password-line. If pw_len > 4 a random password would be generated
-* `show_pw(name)`: shows username and password of the password-line with the name `name`
+* `add_pw_line(pw_len = 0)`: adds new password-line. If `pw_len > 4` a random password would be generated
+* `show_pw(name)`: shows username and password of the password-line with the name `name`.
 * `copy_pw(name)`: shows username and copy password to clipboard.
 ---
-* `change_pw(name, pw_len = 0)`: changes the password of password-line `name`. If `pw_len > 4` then a random password is used.
+* `change_pw(name, pw_len = 0)`: changes the password of password-line `name`. If `pw_len > 4` a random password would be generated.
 * `edit_pw_line(name, keys = [])`: changes keys (not the password) of a password-line. If the key is not defined, a new key would be added. To delete a existing key insert `delete!` as value.
 * `delete_pw_line(name)`: deletes password-line
 * `copy_pw_line(name)`: copies a password-line
