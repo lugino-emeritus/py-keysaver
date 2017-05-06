@@ -4,6 +4,7 @@ A master password is used to encrypt the data.
 
 #### Dependencies:
 * python 3.5 or newer (tested with python 3.5)
+* pyperclip `pip install setuptools`, `pip install pyperclip`
 * tabulate `pip install tabulate`
 * pyscrypt `pip install pyscrypt`
 * _other?_
