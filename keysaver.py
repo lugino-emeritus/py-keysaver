@@ -13,11 +13,13 @@ def sys_randint(a, b = None):
 
 from hashlib import sha256
 from Crypto.Cipher import AES
+import Crypto.Util.Counter as CryptCount
 import pyperclip
 from getpass import getpass
 import os
 from tabulate import tabulate
 import pyscrypt
+import hmac
 
 FILE_NAME = "pwDicRepr"
 
@@ -27,7 +29,8 @@ FILE_NAME = "pwDicRepr"
 
 # print(bytes([0xF0,0x9D,0x84,0x9e]).decode('utf-8'))
 
-PREF_ENC_METHOD = 'scrypt_1 AES'
+PREF_ENC_METHOD = 'sha256 AES'
+PREF_GLOBAL_ENCRYPT = 'AES CTR scrypt'
 PREF_CHECK_MPW = 'scrypt_1-5'
 
 save_mpw = True
@@ -103,24 +106,46 @@ def get_random_pw(n):
 def get_salted_sha256(pw, salt = b''):
 	return sha256(pw + salt).digest()
 
-def simpleAESencrypt(data, key):
+def simple_aes_encrypt(data, key):
 	data += b'1' + b'0' * (16 - (len(data) + 1) % 16)
 	IV = get_salt(16)
 	aes_obj = AES.new(key, AES.MODE_CBC, IV)
 	return IV + aes_obj.encrypt(data)
 
-def simpleAESdecrypt(data, key):
+def simple_aes_decrypt(data, key):
 	(IV, data) = (data[:16], data[16:])
 	aes_obj = AES.new(key, AES.MODE_CBC, IV)
 	data = aes_obj.decrypt(data)
 	while data[-1:] == b'0':
 		data = data[:-1]
 	return data[:-1]
+	
+# use same key for hmac (sha256) and aes, first create hmac (reduced to 24 bit), then encrypt hmac|message
+def aes_hmac_encrypt(data, key): #optimal key length: 48 byte, at least 32 byte
+	IV = get_salt(16)
+	mac = hmac.new(key[-16:], data, sha256).digest()[:24]
+	data = mac + data
+	data += b'1' + b'0' * (16 - (len(data) + 1) % 16)
+	aes_obj = AES.new(key[:32], AES.MODE_CTR, counter = CryptCount.new(128, initial_value=int.from_bytes(IV, 'big')))
+	return IV + aes_obj.encrypt(data)
+
+def aes_hmac_decrypt(data, key):
+	(IV, data) = (data[:16], data[16:])
+	aes_obj = AES.new(key[:32], AES.MODE_CTR, counter = CryptCount.new(128, initial_value=int.from_bytes(IV, 'big')))
+	data = aes_obj.decrypt(data)
+	(mac, data) = (data[:24], data[24:])
+	while data[-1:] == b'0':
+		data = data[:-1]
+	data = data[:-1]
+	if mac != hmac.new(key[-16:], data, sha256).digest()[:24]:
+		print('Message authentication code is wrong!!!')
+		#return b''
+	return data
 
 #-------------------------------------------------------
 
-AVAILABLE_ENC_METHODS = ['sha256 AES', 'scrypt_1 AES', 'clear']
-AVAILABLE_CHECK_METHODS = ['sha256_16', 'scrypt_1-5', 'clear']
+AVAILABLE_ENC_METHODS = ['sha256 AES', 'scrypt_1 AES', 'clear', 'AES CTR scrypt']
+AVAILABLE_CHECK_METHODS = ['sha256_16', 'scrypt_1-5', 'clear', 'none']
 
 def get_salt(n):
 	return bytes([sys_randint(0,255) for i in range(n)])
@@ -128,18 +153,22 @@ def get_salt(n):
 def encrypt_data(data, enc_info, key):
 	method = enc_info['method']
 	if method in ['sha256 AES', 'scrypt_1 AES']:
-		return simpleAESencrypt(data, key)
+		return simple_aes_encrypt(data, key)
 	elif method == 'clear':
 		return data
-	raise KeyError('method_type not known')
+	elif method == 'AES CTR scrypt':
+		return aes_hmac_encrypt(data, key)
+	raise KeyError('''method_type '{}' not known'''.format(method))
 
 def decrypt_data(data, enc_info, key):
 	method = enc_info['method']
 	if method in ['sha256 AES', 'scrypt_1 AES']:
-		return simpleAESdecrypt(data, key)
+		return simple_aes_decrypt(data, key)
 	elif method == 'clear':
 		return data
-	raise KeyError('method_type not known')
+	elif method == 'AES CTR scrypt':
+		return aes_hmac_decrypt(data, key)
+	raise KeyError('''method_type '{}' not known'''.format(method))
 
 def expand_pw(pw, enc_info):
 	method = enc_info['method']
@@ -147,12 +176,14 @@ def expand_pw(pw, enc_info):
 		return get_salted_sha256(pw, enc_info['data']['salt'])
 	elif method == 'sha256_16':
 		return get_salted_sha256(pw, enc_info['data']['salt'])[-16:]
-	elif method in ['scrypt_1-5', 'scrypt_1 AES']:
+	elif method in ['scrypt_1-5', 'scrypt_1 AES', 'AES CTR scrypt']:
 		args = enc_info['data']
 		return pyscrypt.hash(pw, args['salt'], args['N'], args['r'], args['p'], args['dkLen'])
 	elif method == 'clear':
 		return pw
-	raise KeyError('method_type not known')
+	elif method == 'none':
+		return b'0'
+	raise KeyError('''method_type '{}' not known'''.format(method))
 
 def init_enc_info_data(method):
 	if method == 'sha256 AES':
@@ -161,11 +192,15 @@ def init_enc_info_data(method):
 		return {'salt': get_salt(32)}
 	elif method == 'scrypt_1 AES':
 		return {'salt': get_salt(32), 'N': 2048, 'r': 2, 'p': 1, 'dkLen': 32}
+	elif method == 'AES CTR scrypt':
+		return {'salt': get_salt(32), 'N': 2048, 'r': 2, 'p': 2, 'dkLen': 48}
 	elif method == 'scrypt_1-5':
 		return {'salt': get_salt(10), 'N': 1024, 'r': 1, 'p': 1, 'dkLen': 5}
 	elif method == 'clear':
 		return {}
-	raise KeyError('hash_method not known')
+	elif method == 'none':
+		return {}
+	raise KeyError('''hash_method '{}' not known'''.format(method))
 
 
 def read_new_pw():
@@ -200,7 +235,7 @@ def get_mpw():
 		raise ValueError('Master password not set yet.')
 
 	first_round = True
-	while pw_hash != expand_pw(mpw, check_mpw):
+	while pw_hash != expand_pw(mpw, check_mpw) or not mpw:
 		if not first_round:
 			print('Master password wrong, insert it again')
 		mpw = getpass('Insert master password: ').encode('utf-8')
@@ -266,16 +301,25 @@ def set_mpw():
 
 	save_changes()
 
-def add_global_key(mpw = b'', new_method = ''):
+def add_global_key(mpw = b'', new_method = '', ask = True):
 	global global_key
 	if not mpw:
 		mpw = get_mpw()
 	enc_info = pw_dic_info['global_encrypt']
 
 	if new_method:
-		enc_info['method'] = new_method
-	else:
-		enc_info['method'] = pw_dic_info['pref_method']
+		if new_method in AVAILABLE_ENC_METHODS:
+			enc_info['method'] = new_method
+		else:
+			print("add_global_key: method '{}' not known. Use '{}' instead.".format(enc_info['method'], enc_info['method']))
+		
+	if ask and yes_no_question('Do you want to change the global encryption method? '):
+		print('Available: {}'.format(', '.join(AVAILABLE_ENC_METHODS)))
+		method = input('Insert method: ')
+		while method not in AVAILABLE_ENC_METHODS:
+			method = input('Method not know, try it again: ')
+		enc_info['method'] = method
+		
 	enc_info['data'] = init_enc_info_data(enc_info['method'])
 
 	global_key = expand_pw(mpw, enc_info)
@@ -426,9 +470,9 @@ def auto_save_mpw(save = None):
 	global save_mpw, global_mpw
 	if save == None:
 		if save_mpw:
-			save = yes_no_question('Master password saved automatically. Should it also be saved in future? '):
+			save = yes_no_question('Master password saved automatically. Should it also be saved in future? ')
 		else:
-			save = yes_no_question('Master password not saved automatically. Should it be saved in future? '):
+			save = yes_no_question('Master password not saved automatically. Should it be saved in future? ')
 	save_mpw = save
 	if not save_mpw:
 		global_mpw = b''
@@ -447,11 +491,11 @@ if os.path.exists(FILE_NAME):
 		pw_dic_data = pw_dic['data']
 else:
 	pw_dic = {}
-	pw_dic_info = {'save_mpw':  False, 'pref_method': PREF_ENC_METHOD, 'check_mpw': {'method': PREF_CHECK_MPW, 'hash': b'', 'data': {'salt': b''}}, 'global_encrypt': {'method': 'sha256 AES', 'data': {'salt': b''}}}
+	pw_dic_info = {'save_mpw':  False, 'pref_method': PREF_ENC_METHOD, 'check_mpw': {'method': PREF_CHECK_MPW, 'hash': b'', 'data': {'salt': b''}}, 'global_encrypt': {'method': PREF_GLOBAL_ENCRYPT, 'data': {'salt': b''}}}
 	pw_dic_data = {}
 	print('New File was created, now you have to add a master password.')
 	set_mpw()
-	add_global_key()
+	add_global_key(ask = False)
 	print('Global key added.')
 	if yes_no_question('Do you want to add the first password line? '):
 		add_pw_line()
