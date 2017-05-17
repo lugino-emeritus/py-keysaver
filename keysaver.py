@@ -1,6 +1,6 @@
 #
 # Copyright (c) 2017, Lugino-Emeritus (NTI)
-# Version 0.1.2
+# Version 0.1.3
 #
 
 from random import SystemRandom
