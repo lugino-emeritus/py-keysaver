@@ -4,6 +4,7 @@ A master password is used to encrypt the data.
 
 #### Dependencies:
 * python 3.5 or newer (tested with python 3.5)
+* pyperclip `pip install setuptools`, `pip install pyperclip`
 * tabulate `pip install tabulate`
 * pyscrypt `pip install pyscrypt`
 * _other?_
@@ -35,6 +36,7 @@ Start the script with `python -i keysaver.py` (or `python3 -i keysaver.py`). It 
 To enrypt the data AES256 is used (it is possible to add other methods). To get the 32 byte long key for AES it is possible to choose between different hash methods:
 * SHA256
 * scrypt - much more complex compared to SHA256
+* AES with CTR mode and message authentication code (hmac) is now available
 
 Only a few bytes of the hashed master password are saved to check the password. So it is possible to use 'wrong' passwords, but then the encrypted data doesn't make sense. Each password is encrypted with the master password and random salt.
 
