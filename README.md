@@ -1,5 +1,5 @@
 # Python Key-Saver
-This is a little script, which can create random password and save them encrypted
+This is a little script which can create random passwords and save them encrypted.
 A master password is used to encrypt the data.
 
 #### Dependencies:
@@ -16,7 +16,7 @@ Start the script with `python -i keysaver.py` (or `python3 -i keysaver.py`). It 
 
 ### Commands:
 * `list_pw_lines(keys = ['description', 'username'])`: shows names and info to all saved passwords (password-lines). `keys = 'all'` would show all keywords.
-* `add_pw_line(pw_len = 0)`: adds new password-line. If `pw_len > 4` a random password would be generated
+* `add_pw_line(pw_len = 0, enc_method = '')`: adds new password-line. If `pw_len > 4` a random password would be generated. `enc_method` defines a specific encryption method.
 * `show_pw(name)`: shows username and password of the password-line with the name `name`.
 * `copy_pw(name)`: shows username and copy password to clipboard.
 ---
@@ -37,6 +37,7 @@ To enrypt the data AES256 is used (it is possible to add other methods). To get 
 * SHA256
 * scrypt - much more complex compared to SHA256
 * AES with CTR mode and message authentication code (hmac) is now available
+* XOR32: directly xor the data with a salted hash; raise an exception if the data is too long
 
 Only a few bytes of the hashed master password are saved to check the password. So it is possible to use 'wrong' passwords, but then the encrypted data doesn't make sense. Each password is encrypted with the master password and random salt.
 

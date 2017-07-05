@@ -1,6 +1,6 @@
 #
 # Copyright (c) 2017, Lugino-Emeritus (NTI)
-# Version 0.1.3
+# Version 0.1.4
 #
 
 from random import SystemRandom
@@ -103,6 +103,12 @@ def get_random_pw(n):
 
 #-------------------------------------------------------
 
+def b_list_xor0(b1, b2):
+	if len(b2) > len(b1):
+		(b1, b2) = (b2, b1)
+	b2 += bytes([0x00] * (len(b1) - len(b2)))
+	return bytes([a^b for a,b in zip(b1,b2)])
+
 def get_salted_sha256(pw, salt = b''):
 	return sha256(pw + salt).digest()
 
@@ -144,7 +150,7 @@ def aes_hmac_decrypt(data, key):
 
 #-------------------------------------------------------
 
-AVAILABLE_ENC_METHODS = ['sha256 AES', 'scrypt_1 AES', 'clear', 'AES CTR scrypt']
+AVAILABLE_ENC_METHODS = ['sha256 AES', 'scrypt_1 AES', 'clear', 'AES CTR scrypt', 'scrypt_1 XOR32']
 AVAILABLE_CHECK_METHODS = ['sha256_16', 'scrypt_1-5', 'clear', 'none']
 
 def get_salt(n):
@@ -158,6 +164,10 @@ def encrypt_data(data, enc_info, key):
 		return data
 	elif method == 'AES CTR scrypt':
 		return aes_hmac_encrypt(data, key)
+	elif method == 'scrypt_1 XOR32':
+		if len(data) > 32:
+			raise AssertionError('data longer than 32 bytes; choose different encryption method')
+		return b_list_xor0(data, key)
 	raise KeyError('''method_type '{}' not known'''.format(method))
 
 def decrypt_data(data, enc_info, key):
@@ -168,6 +178,13 @@ def decrypt_data(data, enc_info, key):
 		return data
 	elif method == 'AES CTR scrypt':
 		return aes_hmac_decrypt(data, key)
+	elif method == 'scrypt_1 XOR32':
+		if len(data) > 32:
+			raise AssertionError('data longer than 32 bytes?!')
+		x = b_list_xor0(data, key)
+		while x[-1] == 0:
+			x = x[:-1]
+		return x
 	raise KeyError('''method_type '{}' not known'''.format(method))
 
 def expand_pw(pw, enc_info):
@@ -176,7 +193,7 @@ def expand_pw(pw, enc_info):
 		return get_salted_sha256(pw, enc_info['data']['salt'])
 	elif method == 'sha256_16':
 		return get_salted_sha256(pw, enc_info['data']['salt'])[-16:]
-	elif method in ['scrypt_1-5', 'scrypt_1 AES', 'AES CTR scrypt']:
+	elif method in ['scrypt_1-5', 'scrypt_1 AES', 'AES CTR scrypt', 'scrypt_1 XOR32']:
 		args = enc_info['data']
 		return pyscrypt.hash(pw, args['salt'], args['N'], args['r'], args['p'], args['dkLen'])
 	elif method == 'clear':
@@ -190,7 +207,7 @@ def init_enc_info_data(method):
 		return {'salt': get_salt(32)}
 	elif method == 'sha256_16':
 		return {'salt': get_salt(32)}
-	elif method == 'scrypt_1 AES':
+	elif method in ['scrypt_1 AES', 'scrypt_1 XOR32']:
 		return {'salt': get_salt(32), 'N': 2048, 'r': 2, 'p': 1, 'dkLen': 32}
 	elif method == 'AES CTR scrypt':
 		return {'salt': get_salt(32), 'N': 2048, 'r': 2, 'p': 2, 'dkLen': 48}
@@ -343,9 +360,16 @@ def get_pw(name, mpw = b''):
 		mpw = get_mpw()
 	return decrypt_data(x['enc_data'], x['enc_info'], expand_pw(mpw, x['enc_info']))
 
-def add_pw_line(pw_len = 0):
+def add_pw_line(pw_len = 0, enc_method = ''):
 	pw_line = {}
-	pw_line['enc_info'] = {'method': pw_dic_info['pref_method'], 'data': {}}
+	if enc_method:
+		if enc_method not in AVAILABLE_ENC_METHODS:
+			print("enc_method '{}' not known".format(enc_method))
+			print("available methods: {}".format(', '.join(AVAILABLE_ENC_METHODS)))
+			return
+	else:
+		enc_method = pw_dic_info['pref_method']
+	pw_line['enc_info'] = {'method': enc_method, 'data': {}}
 
 	pw_line['enc_info']['data'] = init_enc_info_data(pw_line['enc_info']['method'])
 	key = expand_pw(get_mpw(), pw_line['enc_info'])
@@ -365,12 +389,12 @@ def add_pw_line(pw_len = 0):
 	pw_line['enc_data'] = encrypt_data(pw, pw_line['enc_info'], key)
 
 	pw_line['info'] = {'description': description, 'username': username}
-	pw_dic_data[name] = pw_line
 
 	while yes_no_question('Do you want to add additional information? '):
 		x = input('Insert name of additional data: ')
-		pw_dic_data[name]['info'][x] = input('Insert ' + x + ': ')
+		pw_line['info'][x] = input('Insert ' + x + ': ')
 
+	pw_dic_data[name] = pw_line
 	save_changes()
 
 
