@@ -1,5 +1,5 @@
 # Python Key-Saver
-This is a little script, which can create random password and save them encrypted
+This is a little script which can create random passwords and save them encrypted.
 A master password is used to encrypt the data.
 
 #### Dependencies:
