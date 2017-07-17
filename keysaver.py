@@ -6,6 +6,7 @@
 from random import SystemRandom
 sys_rand_class = SystemRandom()
 def sys_randint(a, b = None):
+	'''returns random integer n with a <= n <= b'''
 	if b == None:
 		(a, b) = (0, a)
 	assert a < b
@@ -76,7 +77,7 @@ def get_char(i): # 0 <= i <= 25 + 26 + 10 + 28 = 89
 		return get_upper_char(i-26)
 	elif i < 62:
 		return get_number(i-52)
-	elif i < 89:
+	elif i < 90:
 		return get_symbol(i-62)
 	return ' '
 
@@ -92,10 +93,10 @@ def get_random_pw(n):
 		k = sys_randint(i, n-1)
 		(ind[i], ind[k]) = (ind[k], ind[i])
 
-	pw_arr[ind[0]] = get_char(sys_randint(0,25))
-	pw_arr[ind[1]] = get_char(sys_randint(0,25) + 26)
-	pw_arr[ind[2]] = get_char(sys_randint(0,10) + 52)
-	pw_arr[ind[3]] = get_char(sys_randint(0,27) + 62)
+	pw_arr[ind[0]] = get_lower_char(sys_randint(0,25))
+	pw_arr[ind[1]] = get_upper_char(sys_randint(0,25))
+	pw_arr[ind[2]] = get_number(sys_randint(0,9))
+	pw_arr[ind[3]] = get_symbol(sys_randint(0,27))
 	for i in ind[4:]:
 			pw_arr[i] = get_char(sys_randint(0,89))
 
