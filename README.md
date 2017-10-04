@@ -9,7 +9,7 @@ A master password is used to encrypt the data.
 * pyscrypt `pip install pyscrypt`
 * _other?_
 
-Maybe it's necessary to use `pip3` instead of `pip`.
+Maybe it is necessary to use `pip3` instead of `pip`.
 
 ## Usage
 Start the script with `python -i keysaver.py` (or `python3 -i keysaver.py`). It will create a file `pwDicRepr` with the necessary data.
