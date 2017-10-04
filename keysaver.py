@@ -6,6 +6,7 @@
 from random import SystemRandom
 sys_rand_class = SystemRandom()
 def sys_randint(a, b = None):
+	'''returns random integer n with a <= n <= b'''
 	if b == None:
 		(a, b) = (0, a)
 	assert a < b
@@ -27,9 +28,8 @@ FILE_NAME = "pwDicRepr"
 #                       'enc_info': {'method': 'sha256 AES', 'data': {"salt": "random salt (32 byte ?)"}},
 #                       'enc_data': b'very_secret'}
 
-# print(bytes([0xF0,0x9D,0x84,0x9e]).decode('utf-8'))
-
-PREF_ENC_METHOD = 'sha256 AES'
+PREF_ENC_METHOD = 'scrypt_1 XOR32'
+ALT_ENC_METHOD = 'sha256 AES'
 PREF_GLOBAL_ENCRYPT = 'AES CTR scrypt'
 PREF_CHECK_MPW = 'scrypt_1-5'
 
@@ -76,7 +76,7 @@ def get_char(i): # 0 <= i <= 25 + 26 + 10 + 28 = 89
 		return get_upper_char(i-26)
 	elif i < 62:
 		return get_number(i-52)
-	elif i < 89:
+	elif i < 90:
 		return get_symbol(i-62)
 	return ' '
 
@@ -92,10 +92,10 @@ def get_random_pw(n):
 		k = sys_randint(i, n-1)
 		(ind[i], ind[k]) = (ind[k], ind[i])
 
-	pw_arr[ind[0]] = get_char(sys_randint(0,25))
-	pw_arr[ind[1]] = get_char(sys_randint(0,25) + 26)
-	pw_arr[ind[2]] = get_char(sys_randint(0,10) + 52)
-	pw_arr[ind[3]] = get_char(sys_randint(0,27) + 62)
+	pw_arr[ind[0]] = get_lower_char(sys_randint(0,25))
+	pw_arr[ind[1]] = get_upper_char(sys_randint(0,25))
+	pw_arr[ind[2]] = get_number(sys_randint(0,9))
+	pw_arr[ind[3]] = get_symbol(sys_randint(0,27))
 	for i in ind[4:]:
 			pw_arr[i] = get_char(sys_randint(0,89))
 
@@ -231,8 +231,7 @@ def read_new_pw():
 #-------------------------------------------------------
 
 def save_changes():
-	global global_key
-	global save_mpw
+	global global_key, save_mpw
 	pw_dic_info['save_mpw'] = save_mpw
 	pw_dic['info'] = pw_dic_info
 	if global_key:
@@ -240,6 +239,45 @@ def save_changes():
 	else:
 		pw_dic['data'] = pw_dic_data
 	open(FILE_NAME, "w").write(repr(pw_dic))
+
+def get_valid_enc_method(enc_method = None):
+	while enc_method not in AVAILABLE_ENC_METHODS:
+		if enc_method:
+			print('Encryption method {} is not available, please choose different one.'.format(enc_method))
+		else:
+			print('Choose encryption method:')
+		print('(available: {})'.format(', '.join(AVAILABLE_ENC_METHODS)))
+		enc_method = input('Insert method: ')
+	return enc_method
+
+def encrypt_metadata(data, enc_method = None, alt_method = None, mpw = None):
+	if enc_method:
+		enc_method = get_valid_enc_method(enc_method)
+	else:
+		enc_method = pw_dic_info['pref_method']
+	alt_method_used = False
+	if not mpw:
+		mpw = get_mpw()
+	while True:
+		enc_info = {'method': enc_method, 'data': {}}
+		enc_info['data'] = init_enc_info_data(enc_info['method'])
+		key = expand_pw(mpw, enc_info)
+
+		try:
+			enc_data = encrypt_data(data, enc_info, key)
+			return (enc_data, enc_info)
+
+		except AssertionError:
+			print('Method {} is not available to encrypt your data.'.format(enc_method))
+		if not alt_method_used:
+			enc_method = pw_dic_info.get('alt_method', None)
+		else:
+			enc_method = None
+		if enc_method == None:
+			print('Choose alternative method.')
+			enc_method = get_valid_enc_method()
+		else:
+			print('using alternative method : {}'.format(enc_method))
 
 
 def get_mpw():
@@ -293,11 +331,10 @@ def set_mpw():
 			check_mpw['method'] = method
 
 		if yes_no_question('Do you want to change the encryption method? '):
-			print('Available: {}'.format(', '.join(AVAILABLE_ENC_METHODS)))
-			method = input('Insert method: ')
-			while method not in AVAILABLE_ENC_METHODS:
-				method = input('Method not know, try it again: ')
-			pw_dic_info['pref_method'] = method
+			pw_dic_info['pref_method'] = get_valid_enc_method()
+
+		if yes_no_question('Do you want to change the alternative encryption method? '):
+			pw_dic_info['alt_method'] = get_valid_enc_method()
 
 		check_mpw['data'] = init_enc_info_data(check_mpw['method'])
 
@@ -318,24 +355,14 @@ def set_mpw():
 
 	save_changes()
 
-def add_global_key(mpw = b'', new_method = '', ask = True):
+def add_global_key(mpw = b'', ask = True):
 	global global_key
 	if not mpw:
 		mpw = get_mpw()
 	enc_info = pw_dic_info['global_encrypt']
 
-	if new_method:
-		if new_method in AVAILABLE_ENC_METHODS:
-			enc_info['method'] = new_method
-		else:
-			print("add_global_key: method '{}' not known. Use '{}' instead.".format(enc_info['method'], enc_info['method']))
-		
-	if ask and yes_no_question('Do you want to change the global encryption method? '):
-		print('Available: {}'.format(', '.join(AVAILABLE_ENC_METHODS)))
-		method = input('Insert method: ')
-		while method not in AVAILABLE_ENC_METHODS:
-			method = input('Method not know, try it again: ')
-		enc_info['method'] = method
+	if ask and yes_no_question('Do you want to change the global key method? '):
+		enc_info['method'] = get_valid_enc_method()
 		
 	enc_info['data'] = init_enc_info_data(enc_info['method'])
 
@@ -360,20 +387,8 @@ def get_pw(name, mpw = b''):
 		mpw = get_mpw()
 	return decrypt_data(x['enc_data'], x['enc_info'], expand_pw(mpw, x['enc_info']))
 
-def add_pw_line(pw_len = 0, enc_method = ''):
+def add_pw_line(pw_len = 0, enc_method = None):
 	pw_line = {}
-	if enc_method:
-		if enc_method not in AVAILABLE_ENC_METHODS:
-			print("enc_method '{}' not known".format(enc_method))
-			print("available methods: {}".format(', '.join(AVAILABLE_ENC_METHODS)))
-			return
-	else:
-		enc_method = pw_dic_info['pref_method']
-	pw_line['enc_info'] = {'method': enc_method, 'data': {}}
-
-	pw_line['enc_info']['data'] = init_enc_info_data(pw_line['enc_info']['method'])
-	key = expand_pw(get_mpw(), pw_line['enc_info'])
-
 	name = input('Name: ')
 	if name in pw_dic_data:
 		if not yes_no_question('Name already in pw_dic, overwrite? '):
@@ -386,13 +401,14 @@ def add_pw_line(pw_len = 0, enc_method = ''):
 			pyperclip.copy(pw.decode('utf-8'))
 	else:
 		pw = read_new_pw()
-	pw_line['enc_data'] = encrypt_data(pw, pw_line['enc_info'], key)
+
+	(pw_line['enc_data'], pw_line['enc_info']) = encrypt_metadata(pw, enc_method = enc_method)
 
 	pw_line['info'] = {'description': description, 'username': username}
 
 	while yes_no_question('Do you want to add additional information? '):
 		x = input('Insert name of additional data: ')
-		pw_line['info'][x] = input('Insert ' + x + ': ')
+		pw_line['info'][x] = input('Insert {}: '.format(x))
 
 	pw_dic_data[name] = pw_line
 	save_changes()
@@ -470,12 +486,7 @@ def update_pass_pw_line(name, mpw, new_mpw = b'', new_pw = b'', new_method = '')
 	if not new_method:
 		new_method = pw_dic_info['pref_method']
 
-	pw_line['enc_info']['method'] = new_method
-
-	pw_line['enc_info']['data'] = init_enc_info_data(pw_line['enc_info']['method'])
-	key = expand_pw(new_mpw, pw_line['enc_info'])
-
-	pw_line['enc_data'] = encrypt_data(new_pw, pw_line['enc_info'], key)
+	(pw_line['enc_data'], pw_line['enc_info']) = encrypt_metadata(new_pw, enc_method = new_method, mpw = new_mpw)
 
 	pw_dic_data[name] = pw_line
 	save_changes()
@@ -515,7 +526,9 @@ if os.path.exists(FILE_NAME):
 		pw_dic_data = pw_dic['data']
 else:
 	pw_dic = {}
-	pw_dic_info = {'save_mpw':  False, 'pref_method': PREF_ENC_METHOD, 'check_mpw': {'method': PREF_CHECK_MPW, 'hash': b'', 'data': {'salt': b''}}, 'global_encrypt': {'method': PREF_GLOBAL_ENCRYPT, 'data': {'salt': b''}}}
+	pw_dic_info = {'save_mpw':  False, 'pref_method': PREF_ENC_METHOD, 'alt_method': ALT_ENC_METHOD,
+		'check_mpw': {'method': PREF_CHECK_MPW, 'hash': b'', 'data': {'salt': b''}},
+		'global_encrypt': {'method': PREF_GLOBAL_ENCRYPT, 'data': {'salt': b''}}}
 	pw_dic_data = {}
 	print('New File was created, now you have to add a master password.')
 	set_mpw()
