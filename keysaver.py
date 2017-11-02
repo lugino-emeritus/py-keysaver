@@ -1,11 +1,11 @@
-#
-# Copyright (c) 2017, Lugino-Emeritus (NTI)
-# Version 0.1.4
-#
+'''
+Copyright (c) 2017, Lugino-Emeritus (NTI)
+Version 0.1.6
+'''
 
 from random import SystemRandom
 sys_rand_class = SystemRandom()
-def sys_randint(a, b = None):
+def sys_randint(a, b=None):
 	'''returns random integer n with a <= n <= b'''
 	if b == None:
 		(a, b) = (0, a)
@@ -109,7 +109,7 @@ def b_list_xor0(b1, b2):
 	b2 += bytes([0x00] * (len(b1) - len(b2)))
 	return bytes([a^b for a,b in zip(b1,b2)])
 
-def get_salted_sha256(pw, salt = b''):
+def get_salted_sha256(pw, salt=b''):
 	return sha256(pw + salt).digest()
 
 def simple_aes_encrypt(data, key):
@@ -132,12 +132,12 @@ def aes_hmac_encrypt(data, key): #optimal key length: 48 byte, at least 32 byte
 	mac = hmac.new(key[-16:], data, sha256).digest()[:24]
 	data = mac + data
 	data += b'1' + b'0' * (16 - (len(data) + 1) % 16)
-	aes_obj = AES.new(key[:32], AES.MODE_CTR, counter = CryptCount.new(128, initial_value=int.from_bytes(IV, 'big')))
+	aes_obj = AES.new(key[:32], AES.MODE_CTR, counter=CryptCount.new(128, initial_value=int.from_bytes(IV, 'big')))
 	return IV + aes_obj.encrypt(data)
 
 def aes_hmac_decrypt(data, key):
 	(IV, data) = (data[:16], data[16:])
-	aes_obj = AES.new(key[:32], AES.MODE_CTR, counter = CryptCount.new(128, initial_value=int.from_bytes(IV, 'big')))
+	aes_obj = AES.new(key[:32], AES.MODE_CTR, counter=CryptCount.new(128, initial_value=int.from_bytes(IV, 'big')))
 	data = aes_obj.decrypt(data)
 	(mac, data) = (data[:24], data[24:])
 	while data[-1:] == b'0':
@@ -145,7 +145,7 @@ def aes_hmac_decrypt(data, key):
 	data = data[:-1]
 	if mac != hmac.new(key[-16:], data, sha256).digest()[:24]:
 		print('Message authentication code is wrong!!!')
-		#return b''
+		return b''
 	return data
 
 #-------------------------------------------------------
@@ -154,7 +154,7 @@ AVAILABLE_ENC_METHODS = ['sha256 AES', 'scrypt_1 AES', 'clear', 'AES CTR scrypt'
 AVAILABLE_CHECK_METHODS = ['sha256_16', 'scrypt_1-5', 'clear', 'none']
 
 def get_salt(n):
-	return bytes([sys_randint(0,255) for i in range(n)])
+	return bytes([sys_randint(0,255) for _ in range(n)])
 
 def encrypt_data(data, enc_info, key):
 	method = enc_info['method']
@@ -240,7 +240,7 @@ def save_changes():
 		pw_dic['data'] = pw_dic_data
 	open(FILE_NAME, "w").write(repr(pw_dic))
 
-def get_valid_enc_method(enc_method = None):
+def get_valid_enc_method(enc_method=None):
 	while enc_method not in AVAILABLE_ENC_METHODS:
 		if enc_method:
 			print('Encryption method {} is not available, please choose different one.'.format(enc_method))
@@ -250,7 +250,7 @@ def get_valid_enc_method(enc_method = None):
 		enc_method = input('Insert method: ')
 	return enc_method
 
-def encrypt_metadata(data, enc_method = None, alt_method = None, mpw = None):
+def encrypt_metadata(data, enc_method=None, mpw=None):
 	if enc_method:
 		enc_method = get_valid_enc_method(enc_method)
 	else:
@@ -339,7 +339,7 @@ def set_mpw():
 		check_mpw['data'] = init_enc_info_data(check_mpw['method'])
 
 		for name in pw_dic_data:
-			update_pass_pw_line(name, old_mpw, new_mpw = new_mpw)
+			update_pass_pw_line(name, old_mpw, new_mpw=new_mpw)
 		mpw = new_mpw
 
 	check_mpw['hash'] = expand_pw(mpw, check_mpw)
@@ -355,7 +355,7 @@ def set_mpw():
 
 	save_changes()
 
-def add_global_key(mpw = b'', ask = True):
+def add_global_key(mpw=b'', ask=True):
 	global global_key
 	if not mpw:
 		mpw = get_mpw()
@@ -381,13 +381,13 @@ def remove_global_key():
 
 #-------------------------------------------------------
 
-def get_pw(name, mpw = b''):
+def get_pw(name, mpw=b''):
 	x = pw_dic_data[name]
 	if not mpw:
 		mpw = get_mpw()
 	return decrypt_data(x['enc_data'], x['enc_info'], expand_pw(mpw, x['enc_info']))
 
-def add_pw_line(pw_len = 0, enc_method = None):
+def add_pw_line(pw_len=0, enc_method=None):
 	pw_line = {}
 	name = input('Name: ')
 	if name in pw_dic_data:
@@ -402,7 +402,7 @@ def add_pw_line(pw_len = 0, enc_method = None):
 	else:
 		pw = read_new_pw()
 
-	(pw_line['enc_data'], pw_line['enc_info']) = encrypt_metadata(pw, enc_method = enc_method)
+	(pw_line['enc_data'], pw_line['enc_info']) = encrypt_metadata(pw, enc_method=enc_method)
 
 	pw_line['info'] = {'description': description, 'username': username}
 
@@ -419,7 +419,7 @@ def delete_pw_line(name):
 		del pw_dic_data[name]
 		save_changes()
 
-def list_pw_lines(keys = ['description', 'username']):
+def list_pw_lines(keys=['description', 'username']):
 	arr = []
 	if isinstance(keys, str):
 		if keys == 'all':
@@ -454,7 +454,7 @@ def copy_pw_line(name):
 	pw_dic_data[new_name] = pw_dic_data[name]
 	save_changes()
 
-def edit_pw_line(name, keys = []): #keys: Array like ['description', 'username', 'password']
+def edit_pw_line(name, keys=[]): #keys: Array like ['description', 'username', 'password']
 	if isinstance(keys, str):
 		keys = [keys]
 	for x in keys:
@@ -477,7 +477,7 @@ def edit_pw_line(name, keys = []): #keys: Array like ['description', 'username',
 				pw_dic_data[name]['info'][x] = s
 		save_changes()
 
-def update_pass_pw_line(name, mpw, new_mpw = b'', new_pw = b'', new_method = ''):
+def update_pass_pw_line(name, mpw, new_mpw=b'', new_pw=b'', new_method=''):
 	pw_line = pw_dic_data[name]
 	if not new_pw:
 		new_pw = get_pw(name, mpw)
@@ -486,12 +486,12 @@ def update_pass_pw_line(name, mpw, new_mpw = b'', new_pw = b'', new_method = '')
 	if not new_method:
 		new_method = pw_dic_info['pref_method']
 
-	(pw_line['enc_data'], pw_line['enc_info']) = encrypt_metadata(new_pw, enc_method = new_method, mpw = new_mpw)
+	(pw_line['enc_data'], pw_line['enc_info']) = encrypt_metadata(new_pw, enc_method=new_method, mpw=new_mpw)
 
 	pw_dic_data[name] = pw_line
 	save_changes()
 
-def change_pw(name, pw_len = 0):
+def change_pw(name, pw_len=0):
 	if yes_no_question('This would change the password of \'' + name + "'. Continue? "):
 		if pw_len > 4:
 			pw = get_random_pw(pw_len).encode('utf-8')
@@ -499,9 +499,9 @@ def change_pw(name, pw_len = 0):
 				pyperclip.copy(pw.decode('utf-8'))
 		else:
 			pw = read_new_pw()
-		update_pass_pw_line(name, get_mpw(), new_pw = pw)
+		update_pass_pw_line(name, get_mpw(), new_pw=pw)
 
-def auto_save_mpw(save = None):
+def auto_save_mpw(save=None):
 	global save_mpw, global_mpw
 	if save == None:
 		if save_mpw:
@@ -515,27 +515,28 @@ def auto_save_mpw(save = None):
 
 #-------------------------------------------------------
 
-if os.path.exists(FILE_NAME):
-	pw_dic = eval(open(FILE_NAME).read())
-	pw_dic_info = pw_dic['info']
-	save_mpw = pw_dic_info['save_mpw']
-	if pw_dic_info['global_encrypt']['method']:
-		global_key = expand_pw(get_mpw(), pw_dic_info['global_encrypt'])
-		pw_dic_data = eval(decrypt_data(pw_dic['data'], pw_dic_info['global_encrypt'], global_key).decode('utf-8'))
+if __name__ == '__main__':
+	if os.path.exists(FILE_NAME):
+		pw_dic = eval(open(FILE_NAME).read())
+		pw_dic_info = pw_dic['info']
+		save_mpw = pw_dic_info['save_mpw']
+		if pw_dic_info['global_encrypt']['method']:
+			global_key = expand_pw(get_mpw(), pw_dic_info['global_encrypt'])
+			pw_dic_data = eval(decrypt_data(pw_dic['data'], pw_dic_info['global_encrypt'], global_key).decode('utf-8'))
+		else:
+			pw_dic_data = pw_dic['data']
 	else:
-		pw_dic_data = pw_dic['data']
-else:
-	pw_dic = {}
-	pw_dic_info = {'save_mpw':  False, 'pref_method': PREF_ENC_METHOD, 'alt_method': ALT_ENC_METHOD,
-		'check_mpw': {'method': PREF_CHECK_MPW, 'hash': b'', 'data': {'salt': b''}},
-		'global_encrypt': {'method': PREF_GLOBAL_ENCRYPT, 'data': {'salt': b''}}}
-	pw_dic_data = {}
-	print('New File was created, now you have to add a master password.')
-	set_mpw()
-	add_global_key(ask = False)
-	print('Global key added.')
-	if yes_no_question('Do you want to add the first password line? '):
-		add_pw_line()
-	save_mpw = False
-	global_mpw = b''
-	save_changes()
+		pw_dic = {}
+		pw_dic_info = {'save_mpw':  False, 'pref_method': PREF_ENC_METHOD, 'alt_method': ALT_ENC_METHOD,
+			'check_mpw': {'method': PREF_CHECK_MPW, 'hash': b'', 'data': {'salt': b''}},
+			'global_encrypt': {'method': PREF_GLOBAL_ENCRYPT, 'data': {'salt': b''}}}
+		pw_dic_data = {}
+		print('New File was created, now you have to add a master password.')
+		set_mpw()
+		add_global_key(ask=False)
+		print('Global key added.')
+		if yes_no_question('Do you want to add the first password line? '):
+			add_pw_line()
+		save_mpw = False
+		global_mpw = b''
+		save_changes()
