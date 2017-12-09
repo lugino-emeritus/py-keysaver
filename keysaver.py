@@ -1,13 +1,13 @@
 '''
 Copyright (c) 2017, Lugino-Emeritus (NTI)
-Version 0.1.6
+Version 0.1.7
 '''
 
 from random import SystemRandom
 sys_rand_class = SystemRandom()
 def sys_randint(a, b=None):
 	'''returns random integer n with a <= n <= b'''
-	if b == None:
+	if b is None:
 		(a, b) = (0, a)
 	assert a < b
 	return sys_rand_class.randint(a, b)
@@ -40,10 +40,10 @@ global_key = b''
 #-------------------------------------------------------
 
 def yes_no_question(s):
-	yes = set(['yes', 'y', 'j', 'ja'])
-	no = set(['no', 'n', 'nein'])
+	yes = {'yes', 'y', 'j', 'ja'}
+	no = {'no', 'n', 'nein'}
 	while True:
-		choice = input(s).lower()
+		choice = raw_input(s).lower()
 		if choice in yes:
 			return True
 		elif choice in no:
@@ -125,7 +125,7 @@ def simple_aes_decrypt(data, key):
 	while data[-1:] == b'0':
 		data = data[:-1]
 	return data[:-1]
-	
+
 # use same key for hmac (sha256) and aes, first create hmac (reduced to 24 bit), then encrypt hmac|message
 def aes_hmac_encrypt(data, key): #optimal key length: 48 byte, at least 32 byte
 	IV = get_salt(16)
@@ -154,7 +154,7 @@ AVAILABLE_ENC_METHODS = ['sha256 AES', 'scrypt_1 AES', 'clear', 'AES CTR scrypt'
 AVAILABLE_CHECK_METHODS = ['sha256_16', 'scrypt_1-5', 'clear', 'none']
 
 def get_salt(n):
-	return bytes([sys_randint(0,255) for _ in range(n)])
+	return os.urandom(n)
 
 def encrypt_data(data, enc_info, key):
 	method = enc_info['method']
@@ -247,7 +247,7 @@ def get_valid_enc_method(enc_method=None):
 		else:
 			print('Choose encryption method:')
 		print('(available: {})'.format(', '.join(AVAILABLE_ENC_METHODS)))
-		enc_method = input('Insert method: ')
+		enc_method = raw_input('Insert method: ')
 	return enc_method
 
 def encrypt_metadata(data, enc_method=None, mpw=None):
@@ -273,7 +273,7 @@ def encrypt_metadata(data, enc_method=None, mpw=None):
 			enc_method = pw_dic_info.get('alt_method', None)
 		else:
 			enc_method = None
-		if enc_method == None:
+		if enc_method is None:
 			print('Choose alternative method.')
 			enc_method = get_valid_enc_method()
 		else:
@@ -317,7 +317,7 @@ def set_mpw():
 		if not yes_no_question('This would change your master password. Continue? '):
 			return
 		print('It is really recommend to make a backup of your data file now.')
-		input('Click Enter to continue. ')
+		raw_input('Click Enter to continue. ')
 		print('Old Password needed.')
 		old_mpw = get_mpw()
 		print('New master password:')
@@ -325,7 +325,7 @@ def set_mpw():
 
 		if yes_no_question('Do you want to change the method using to check the master password? '):
 			print('Available: {}'.format(', '.join(AVAILABLE_CHECK_METHODS)))
-			method = input('Insert method: ')
+			method = raw_input('Insert method: ')
 			while method not in AVAILABLE_CHECK_METHODS:
 				method = input('Method not know, try it again: ')
 			check_mpw['method'] = method
@@ -363,7 +363,7 @@ def add_global_key(mpw=b'', ask=True):
 
 	if ask and yes_no_question('Do you want to change the global key method? '):
 		enc_info['method'] = get_valid_enc_method()
-		
+
 	enc_info['data'] = init_enc_info_data(enc_info['method'])
 
 	global_key = expand_pw(mpw, enc_info)
@@ -503,7 +503,7 @@ def change_pw(name, pw_len=0):
 
 def auto_save_mpw(save=None):
 	global save_mpw, global_mpw
-	if save == None:
+	if save is None:
 		if save_mpw:
 			save = yes_no_question('Master password saved automatically. Should it also be saved in future? ')
 		else:
