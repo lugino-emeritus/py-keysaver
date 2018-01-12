@@ -1,6 +1,6 @@
 '''
-Copyright (c) 2017, Lugino-Emeritus (NTI)
-Version 0.1.7
+Copyright (c) 2018, Lugino-Emeritus (NTI)
+Version 0.2.0
 '''
 
 from random import SystemRandom
@@ -21,6 +21,10 @@ import os
 from tabulate import tabulate
 import pyscrypt
 import hmac
+from cryptography.hazmat.backends import default_backend as hazmat_def_backend
+from cryptography.hazmat.primitives.ciphers import (
+	Cipher as HazmatCipher, algorithms as hazmat_algorithms, modes as hazmat_modes)
+import time
 
 FILE_NAME = "pwDicRepr"
 
@@ -29,9 +33,10 @@ FILE_NAME = "pwDicRepr"
 #                       'enc_data': b'very_secret'}
 
 PREF_ENC_METHOD = 'scrypt_1 XOR32'
-ALT_ENC_METHOD = 'sha256 AES'
-PREF_GLOBAL_ENCRYPT = 'AES CTR scrypt'
+ALT_ENC_METHOD = 'AES GCM scrypt'
+PREF_GLOBAL_ENCRYPT = 'AES GCM scrypt'
 PREF_CHECK_MPW = 'scrypt_1-5'
+PREF_PASSWORD_LIFETIME = 365 * 24 * 60 * 60
 
 save_mpw = True
 global_mpw = b''
@@ -43,7 +48,7 @@ def yes_no_question(s):
 	yes = {'yes', 'y', 'j', 'ja'}
 	no = {'no', 'n', 'nein'}
 	while True:
-		choice = raw_input(s).lower()
+		choice = input(s).lower()
 		if choice in yes:
 			return True
 		elif choice in no:
@@ -148,9 +153,30 @@ def aes_hmac_decrypt(data, key):
 		return b''
 	return data
 
+def aes_gcm_encrypt(data, key):
+	iv = os.urandom(16)
+	encryptor = HazmatCipher(
+		hazmat_algorithms.AES(key),
+		hazmat_modes.GCM(iv),
+		backend=hazmat_def_backend()
+		).encryptor()
+	data = encryptor.update(data) + encryptor.finalize()
+	assert len(encryptor.tag) == 16
+	return (iv + encryptor.tag + data)
+
+def aes_gcm_decrypt(data, key):
+	(iv, tag, data) = (data[:16], data[16:32], data[32:])
+	decryptor = HazmatCipher(
+		hazmat_algorithms.AES(key),
+		hazmat_modes.GCM(iv, tag),
+		backend=hazmat_def_backend()
+		).decryptor()
+	data = decryptor.update(data) + decryptor.finalize()
+	return data
+
 #-------------------------------------------------------
 
-AVAILABLE_ENC_METHODS = ['sha256 AES', 'scrypt_1 AES', 'clear', 'AES CTR scrypt', 'scrypt_1 XOR32']
+AVAILABLE_ENC_METHODS = ['sha256 AES', 'scrypt_1 AES', 'clear', 'AES CTR scrypt', 'scrypt_1 XOR32', 'AES GCM scrypt']
 AVAILABLE_CHECK_METHODS = ['sha256_16', 'scrypt_1-5', 'clear', 'none']
 
 def get_salt(n):
@@ -168,6 +194,8 @@ def encrypt_data(data, enc_info, key):
 		if len(data) > 32:
 			raise AssertionError('data longer than 32 bytes; choose different encryption method')
 		return b_list_xor0(data, key)
+	elif method == 'AES GCM scrypt':
+		return aes_gcm_encrypt(data, key)
 	raise KeyError('''method_type '{}' not known'''.format(method))
 
 def decrypt_data(data, enc_info, key):
@@ -185,6 +213,8 @@ def decrypt_data(data, enc_info, key):
 		while x[-1] == 0:
 			x = x[:-1]
 		return x
+	elif method == 'AES GCM scrypt':
+		return aes_gcm_decrypt(data, key)
 	raise KeyError('''method_type '{}' not known'''.format(method))
 
 def expand_pw(pw, enc_info):
@@ -193,7 +223,7 @@ def expand_pw(pw, enc_info):
 		return get_salted_sha256(pw, enc_info['data']['salt'])
 	elif method == 'sha256_16':
 		return get_salted_sha256(pw, enc_info['data']['salt'])[-16:]
-	elif method in ['scrypt_1-5', 'scrypt_1 AES', 'AES CTR scrypt', 'scrypt_1 XOR32']:
+	elif method in ['scrypt_1-5', 'scrypt_1 AES', 'AES CTR scrypt', 'scrypt_1 XOR32', 'AES GCM scrypt']:
 		args = enc_info['data']
 		return pyscrypt.hash(pw, args['salt'], args['N'], args['r'], args['p'], args['dkLen'])
 	elif method == 'clear':
@@ -213,6 +243,8 @@ def init_enc_info_data(method):
 		return {'salt': get_salt(32), 'N': 2048, 'r': 2, 'p': 2, 'dkLen': 48}
 	elif method == 'scrypt_1-5':
 		return {'salt': get_salt(10), 'N': 1024, 'r': 1, 'p': 1, 'dkLen': 5}
+	elif method == 'AES GCM scrypt':
+		return {'salt': get_salt(32), 'N': 2048, 'r': 2, 'p': 1, 'dkLen': 32}
 	elif method == 'clear':
 		return {}
 	elif method == 'none':
@@ -223,8 +255,8 @@ def init_enc_info_data(method):
 def read_new_pw():
 	pw = b''
 	while True:
-		pw = getpass('Insert new password: ')
-		if getpass('Insert password again: ') == pw:
+		pw = getpass('Input new password: ')
+		if getpass('Input password again: ') == pw:
 			return pw.encode('utf-8')
 		print('Passwords are not equal. Try it again.')
 
@@ -247,7 +279,7 @@ def get_valid_enc_method(enc_method=None):
 		else:
 			print('Choose encryption method:')
 		print('(available: {})'.format(', '.join(AVAILABLE_ENC_METHODS)))
-		enc_method = raw_input('Insert method: ')
+		enc_method = input('Input method: ')
 	return enc_method
 
 def encrypt_metadata(data, enc_method=None, mpw=None):
@@ -292,8 +324,8 @@ def get_mpw():
 	first_round = True
 	while pw_hash != expand_pw(mpw, check_mpw) or not mpw:
 		if not first_round:
-			print('Master password wrong, insert it again')
-		mpw = getpass('Insert master password: ').encode('utf-8')
+			print('Master password wrong, input it again')
+		mpw = getpass('Input master password: ').encode('utf-8')
 		first_round = False
 
 	if save_mpw:
@@ -317,7 +349,7 @@ def set_mpw():
 		if not yes_no_question('This would change your master password. Continue? '):
 			return
 		print('It is really recommend to make a backup of your data file now.')
-		raw_input('Click Enter to continue. ')
+		input('Click Enter to continue. ')
 		print('Old Password needed.')
 		old_mpw = get_mpw()
 		print('New master password:')
@@ -325,7 +357,7 @@ def set_mpw():
 
 		if yes_no_question('Do you want to change the method using to check the master password? '):
 			print('Available: {}'.format(', '.join(AVAILABLE_CHECK_METHODS)))
-			method = raw_input('Insert method: ')
+			method = input('Input method: ')
 			while method not in AVAILABLE_CHECK_METHODS:
 				method = input('Method not know, try it again: ')
 			check_mpw['method'] = method
@@ -407,8 +439,10 @@ def add_pw_line(pw_len=0, enc_method=None):
 	pw_line['info'] = {'description': description, 'username': username}
 
 	while yes_no_question('Do you want to add additional information? '):
-		x = input('Insert name of additional data: ')
-		pw_line['info'][x] = input('Insert {}: '.format(x))
+		x = input('Input name of additional data: ')
+		pw_line['info'][x] = input('Input {}: '.format(x))
+
+	pw_line['update_ts'] = time.time() + pw_dic_info.get('lifetime', PREF_PASSWORD_LIFETIME)
 
 	pw_dic_data[name] = pw_line
 	save_changes()
@@ -447,7 +481,7 @@ def copy_pw(name):
 	print('username: ' + pw_dic_data[name]['info']['username'] + ', password copied.')
 
 def copy_pw_line(name):
-	new_name = input('Insert new name: ')
+	new_name = input('Input new name: ')
 	if new_name in pw_dic_data:
 		if not yes_no_question('Name already in pw_dic, overwrite? '):
 			return
@@ -459,7 +493,7 @@ def edit_pw_line(name, keys=[]): #keys: Array like ['description', 'username', '
 		keys = [keys]
 	for x in keys:
 		if x == 'name':
-			new_name = input('Insert new name: ')
+			new_name = input('Input new name: ')
 			if new_name in pw_dic_data:
 				if not yes_no_question('Name already in pw_dic, overwrite? '):
 					return
@@ -469,7 +503,7 @@ def edit_pw_line(name, keys=[]): #keys: Array like ['description', 'username', '
 		else:
 			if x not in pw_dic_data[name]['info']:
 				print('value \'' + x + '\' is not defined yet. This will add the value.')
-			s = input('Insert ' + x + ': ')
+			s = input('Input ' + x + ': ')
 			if s == 'delete!' and  x in pw_dic_data[name]['info']:
 				del pw_dic_data[name]['info'][x]
 				print('value ' + x + ' deleted.')
@@ -499,6 +533,7 @@ def change_pw(name, pw_len=0):
 				pyperclip.copy(pw.decode('utf-8'))
 		else:
 			pw = read_new_pw()
+		pw_dic_data[name]['update_ts'] = time.time() + pw_dic_info.get('lifetime', PREF_PASSWORD_LIFETIME)
 		update_pass_pw_line(name, get_mpw(), new_pw=pw)
 
 def auto_save_mpw(save=None):
@@ -513,18 +548,72 @@ def auto_save_mpw(save=None):
 		global_mpw = b''
 	save_changes()
 
+def set_pw_lifetime(lifetime = 0):
+	if lifetime == 0:
+		try:
+			lifetime = 24 * 60 * 60 * float(input('Input the lifetime of new passwords in days: '))
+		except ValueError:
+			print('Input was not valid!')
+			return
+	if lifetime < 0:
+		lifetime = PREF_PASSWORD_LIFETIME
+	pw_dic_info['lifetime'] = lifetime
+	save_changes()
+
+def check_pw_lifetime():
+	skip = False
+	for name in pw_dic_data:
+		if time.time() > pw_dic_data[name].get('update_ts', 0):
+			print('')
+			if not skip:
+				if yes_no_question('There are passwords to renew. Renew them now? '):
+					skip = True
+				else:
+					return False
+			if yes_no_question('The lifetime of {} was expired. Do you want to change the password now? '.format(name)):
+				print('Old / current login data:')
+				show_pw(name)
+				if yes_no_question('Do you want to autocreate a new password? '):
+					print('Input length of new password: (at least 6)')
+					while True:
+						try:
+							pw_len = int(input())
+							if pw_len < 6:
+								raise ValueError
+							break
+						except ValueError:
+							print('Input not a valid integer, try it again:')
+					change_pw(name, pw_len)
+				else:
+					change_pw(name)
+			else:
+				if 'lifetime' not in pw_dic_info:
+					pw_dic_info['lifetime'] = PREF_PASSWORD_LIFETIME
+				if yes_no_question('Do you want to extend the lifetime ({:0.1f} days)? '.format(pw_dic_info['lifetime'] / (60 * 60 * 24))):
+					pw_dic_data[name]['update_ts'] = time.time() + pw_dic_info['lifetime']
+	if skip:
+		save_changes()
+		return True
+	return False
+
 #-------------------------------------------------------
 
 if __name__ == '__main__':
 	if os.path.exists(FILE_NAME):
 		pw_dic = eval(open(FILE_NAME).read())
 		pw_dic_info = pw_dic['info']
-		save_mpw = pw_dic_info['save_mpw']
+		org_save_mpw = pw_dic_info['save_mpw']
+		save_mpw = True
 		if pw_dic_info['global_encrypt']['method']:
 			global_key = expand_pw(get_mpw(), pw_dic_info['global_encrypt'])
 			pw_dic_data = eval(decrypt_data(pw_dic['data'], pw_dic_info['global_encrypt'], global_key).decode('utf-8'))
 		else:
 			pw_dic_data = pw_dic['data']
+		if check_pw_lifetime() and not org_save_mpw:
+			auto_save_mpw(False)
+		elif not org_save_mpw:
+			save_mpw = False
+			global_mpw = b''
 	else:
 		pw_dic = {}
 		pw_dic_info = {'save_mpw':  False, 'pref_method': PREF_ENC_METHOD, 'alt_method': ALT_ENC_METHOD,
