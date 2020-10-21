@@ -5,10 +5,10 @@ file syntax:
 	  b'\x00\x01':
 	  - argon2 to expand pw to 32 byte key with 32 byte salt
 	  - AES GCM global encryption with 12 byte nonce
-	  - AES CBC for passwords with 16 byte iv and token as key
+	  - AES CBC for passwords: 16 byte iv, token as key, no MAC
 	  - encrypted data:
 	  	- 32 byte salt to derive a token = sha256(salt + pw)
-	  	- dictionary with data as msgpack
+	  	- dictionary stored as msgpack
 		- MAC of AES GCM with aad over version, method and argon2 salt
 
 pw_dic['name'] = {'info': {"description": "Mail Telekom Main", "username": "username"},
@@ -35,13 +35,12 @@ from tabulate import tabulate
 
 from ntlib.fctthread import ThreadLoop
 
-__version__ = '0.3.0'
+__version__ = '0.3.4'
 __author__ = 'NTI (lugino-emeritus) <*@*.de>'
 
-
 FILENAME = "pwdic"
-PW_LIFETIME = 400 * 86400
 PW_DEFAULT_LEN = 12
+MASTER_TOKEN_TIME = 300
 
 _VERSION = b'\x00\x01'
 _ENC_METHOD = b'\x00\x01'
@@ -53,17 +52,20 @@ def utc_ts():
 def _utc_msts48():
 	return int(utc_ts() * 1000) & (2**48-1)
 
+sys_randint = _SystemRandom().randint  # returns n with a <= n <= b
+
+def pw_lifetime():
+	return 86400 * sys_randint(400, 600)
+
 _salt_count = int.from_bytes(os.urandom(4), 'little')
 def gen_salt(n):
 	global _salt_count
-	if n < 11:
+	if n <= 10:
 		return os.urandom(n)
 	_salt_count = _salt_count+1 if _salt_count < 2**32-1 else 0
-	return _utc_msts48().to_bytes(6, 'little') + _salt_count.to_bytes(4, 'little') + os.urandom(n-10)
+	return b''.join((_utc_msts48().to_bytes(6, 'little'), _salt_count.to_bytes(4, 'little'), os.urandom(n-10)))
 
 #-------------------------------------------------------
-
-sys_randint = _SystemRandom().randint  # returns n with a <= n <= b
 
 def _get_number(i):
 	assert 0 <= i <= 9
@@ -88,7 +90,7 @@ def _get_char(i): # 0 <= i <= 89 = 26 + 26 + 10 + 28 - 1
 		return _get_number(i-52)
 	elif i < 90:
 		return _get_symbol(i-62)
-	raise ValueError('_get_char paramter too high (0 <= i <= 89)')
+	raise ValueError('_get_char int too high (valid range: 0 <= i <= 89)')
 
 def gen_rand_pw(n=PW_DEFAULT_LEN):
 	if n < 6:
@@ -166,10 +168,8 @@ class crypto:
 
 	def argon2_param1_hash(key, salt):
 		return argon2.low_level.hash_secret_raw(
-				secret=key, salt=salt,
-				time_cost=4, memory_cost=524288,
-				parallelism=4, hash_len=32,
-				type=argon2.Type.ID)
+			type=argon2.Type.ID, secret=key, salt=salt, hash_len=32,
+			time_cost=4, parallelism=4, memory_cost=524288)
 
 #-------------------------------------------------------
 
@@ -211,7 +211,8 @@ class DicSaver:
 
 
 	def read(self):
-		data = open(self.filename, 'rb').read()
+		with open(self.filename, 'rb') as f:
+			data = f.read()
 		version, self._method, data = data[:2], data[2:4], data[4:]
 		if version != _VERSION:
 			raise Exception('version not supported')
@@ -249,7 +250,8 @@ class DicSaver:
 			data = crypto.aes_gcm_encrypt(self._enc_key, data, aad)
 		else:
 			raise KeyError('method {!s} unknown'.format(self._method))
-		open(self.filename, 'wb').write(aad + data)
+		with open(self.filename, 'wb') as f:
+			f.write(aad + data)
 
 
 	@property
@@ -309,12 +311,12 @@ class TokenDicSaver(DicSaver):
 
 	def _set_token(self, pw):
 		super()._set_token(pw)
-		self._alive_ts = time.time() + 300
+		self._alive_ts = time.time() + MASTER_TOKEN_TIME
 		self._loop_ctl.start()
 
 	def get_token(self):
 		if self._loop_ctl.is_alive():
-			ts = time.time() + 100
+			ts = time.time() + MASTER_TOKEN_TIME
 			if ts > self._alive_ts:
 				self._alive_ts = ts
 		elif self._token is not None:
@@ -371,7 +373,7 @@ def change_mpw(method=_ENC_METHOD):
 def set_pw(name, pw):
 	#pw must be a byte-like object
 	pw_dic[name]['enc_data'] = _encrypt_data(dic_saver.get_token(), pw, method=dic_saver.method)
-	pw_dic[name]['update_ts'] = int(utc_ts()) + PW_LIFETIME
+	pw_dic[name]['update_ts'] = int(utc_ts()) + pw_lifetime()
 	save_dic()
 def get_pw(name):
 	#return pw as string
@@ -448,7 +450,7 @@ def list_pw_lines(keys=('description', 'username')):
 	elif isinstance(keys, str):
 		keys = (keys,)
 	arr = tuple((name,) + tuple(val['info'].get(k, '') for k in keys)
-			for name, val in pw_dic.items())
+			for name, val in sorted(pw_dic.items()))
 	print(tabulate(arr, headers=(('name',) + keys)))
 
 
@@ -460,8 +462,8 @@ def check_lifetimes():
 	for name in to_update:
 		if _yes_no_question('The lifetime of {!s} expired. Do you want to change the password? '.format(name)):
 			change_pw(name)
-		elif _yes_no_question('Do you want to extend the lifetime ({:d} days)? '.format(PW_LIFETIME//86400)):
-			pw_dic[name]['update_ts'] = now + PW_LIFETIME
+		elif _yes_no_question('Do you want to extend the lifetime? '):
+			pw_dic[name]['update_ts'] = now + pw_lifetime()
 			save_dic()
 
 #-------------------------------------------------------
