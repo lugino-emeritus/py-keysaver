@@ -35,7 +35,7 @@ from tabulate import tabulate
 
 from ntlib.fctthread import ThreadLoop
 
-__version__ = '0.3.4'
+__version__ = '0.3.6'
 __author__ = 'NTI (lugino-emeritus) <*@*.de>'
 
 FILENAME = "pwdic"
@@ -128,7 +128,7 @@ def _read_new_pw():
 	return pw.encode()
 
 def _read_rand_pw():
-	data = input('To generate random password enter length > 0, 1 means default length ({:d}): '.format(PW_DEFAULT_LEN))
+	data = input(f'To generate random password enter length > 0, 1 means default length ({PW_DEFAULT_LEN:d}): ')
 	if data:
 		try:
 			n = int(data)
@@ -191,7 +191,7 @@ class DicSaver:
 			self._enc_salt = gen_salt(32)
 			self._enc_key = crypto.argon2_param1_hash(pw, self._enc_salt)
 		else:
-			raise KeyError('method {!s} unknown'.format(self._method))
+			raise KeyError(f'method {self._method} unknown')
 
 	def _check_pw(self, pw):
 		if self._method == b'\x00\x00':
@@ -199,7 +199,7 @@ class DicSaver:
 		elif self._method == b'\x00\x01':
 			return crypto.argon2_param1_hash(pw, self._enc_salt) == self._enc_key
 		else:
-			raise KeyError('method {!s} unknown'.format(self._method))
+			raise KeyError(f'method {self._method} unknown')
 
 	def _set_token(self, pw):
 		if self._method == b'\x00\x00':
@@ -207,7 +207,7 @@ class DicSaver:
 		elif self._method == b'\x00\x01':
 			self._token = hashlib.sha256(self._token_data + pw).digest()
 		else:
-			raise KeyError('method {!s} unknown'.format(self._method))
+			raise KeyError(f'method {self._method} unknown')
 
 
 	def read(self):
@@ -230,7 +230,7 @@ class DicSaver:
 					data = crypto.aes_gcm_decrypt(key, data, aad)
 					self._token_data, data = data[:32], data[32:]
 				else:
-					raise KeyError('method {!s} unknown'.format(self._method))
+					raise KeyError(f'method {self._method} unknown')
 				break
 			except InvalidTag:
 				pw = getpass('Wrong password, try again: ').encode()
@@ -249,7 +249,7 @@ class DicSaver:
 			data = self._token_data + data
 			data = crypto.aes_gcm_encrypt(self._enc_key, data, aad)
 		else:
-			raise KeyError('method {!s} unknown'.format(self._method))
+			raise KeyError(f'method {self._method} unknown')
 		with open(self.filename, 'wb') as f:
 			f.write(aad + data)
 
@@ -277,7 +277,7 @@ class DicSaver:
 		elif self._method == b'\x00\x01':
 			self._token_data = gen_salt(32)
 		else:
-			raise KeyError('method {!s} unknown'.format(self._method))
+			raise KeyError(f'method {self._method} unknown')
 
 		self._refresh_pw(pw)
 		self._set_token(pw)
@@ -298,16 +298,15 @@ class TokenDicSaver(DicSaver):
 		self._alive_ts = 0
 		self._loop_ctl = ThreadLoop(self._loop)
 
-	def _loop(self, cont_task, req_stop):
-		while cont_task():
-			dt = self._alive_ts - time.time()
-			if dt > 30:
-				time.sleep(30)
-			elif dt > 0:
-				time.sleep(dt)
-			else:
-				req_stop()
-		self._token = None
+	def _loop(self):
+		dt = self._alive_ts - time.time()
+		if dt > 30:
+			time.sleep(30)
+		elif dt > 0:
+			time.sleep(dt)
+		else:
+			self._token = None
+			return True
 
 	def _set_token(self, pw):
 		super()._set_token(pw)
@@ -331,7 +330,7 @@ def _encrypt_data(token, data, *, method):
 	elif method == b'\x00\x01':
 		return crypto.aes_cbc_encrypt(token, data)
 	else:
-		raise KeyError('method {!s} unknown'.format(method))
+		raise KeyError(f'method {method} unknown')
 
 def _decrypt_data(token, data, *, method):
 	if method == b'\x00\x00':
@@ -339,7 +338,7 @@ def _decrypt_data(token, data, *, method):
 	elif method == b'\x00\x01':
 		return crypto.aes_cbc_decrypt(token, data)
 	else:
-		raise KeyError('method {!s} unknown'.format(method))
+		raise KeyError(f'method {method} unknown')
 
 #-------------------------------------------------------
 
@@ -380,10 +379,10 @@ def get_pw(name):
 	return _decrypt_data(dic_saver.get_token(), pw_dic[name]['enc_data'], method=dic_saver.method).decode()
 
 def show_pw(name):
-	print('username: {!s}, password: {!s}'.format(pw_dic[name]['info']['username'], get_pw(name)))
+	print(f"username: {pw_dic[name]['info']['username']}, password: {get_pw(name)}")
 def copy_pw(name):
 	pyperclip.copy(get_pw(name))
-	print('username: {!s}, password copied'.format(pw_dic[name]['info']['username']))
+	print(f"username: {pw_dic[name]['info']['username']}, password copied")
 
 def change_pw(name):
 	if _yes_no_question('Show current password? '):
@@ -401,12 +400,12 @@ def add_pw_line(name):
 	pw = _read_rand_pw()
 	while _yes_no_question('Do you want to add additional information? '):
 		x = input('Enter name of new key: ')
-		pw_info[x] = input('Enter {}: '.format(x))
+		pw_info[x] = input(f'Enter {x}: ')
 	pw_dic[name] = {'info': pw_info}
 	set_pw(name, pw)
 
 def delete_pw_line(name):
-	if _yes_no_question('Do you really want to delete {!s}? '.format(name)):
+	if _yes_no_question(f'Do you really want to delete {name}? '):
 		del pw_dic[name]
 		save_dic()
 
@@ -430,7 +429,7 @@ def edit_pw_line(name):
 	print(tabulate(sorted(pw_info.items())))
 	while _yes_no_question('Do you want to add / change keys? '):
 		x = input('Enter name of key: ')
-		y = input("Enter {!s} ('DEL' will delete the key): ".format(x))
+		y = input(f"Enter {x} ('DEL' will delete the key): ")
 		if y == 'DEL':
 			if x in pw_info:
 				del pw_info[x]
@@ -460,7 +459,7 @@ def check_lifetimes():
 	if not (to_update and _yes_no_question('There are passwords to renew. Renew them now? ')):
 		return
 	for name in to_update:
-		if _yes_no_question('The lifetime of {!s} expired. Do you want to change the password? '.format(name)):
+		if _yes_no_question(f'The lifetime of {name} expired. Do you want to change the password? '):
 			change_pw(name)
 		elif _yes_no_question('Do you want to extend the lifetime? '):
 			pw_dic[name]['update_ts'] = now + pw_lifetime()
@@ -472,6 +471,6 @@ if __name__ == '__main__':
 	if os.path.exists(FILENAME):
 		read_dic()
 		check_lifetimes()
-	elif _yes_no_question("File '{!s}' not found, create a new password file? ".format(FILENAME)):
+	elif _yes_no_question(f"File '{FILENAME}' not found, create a new password file? "):
 		pw_dic = {}
 		change_mpw()
