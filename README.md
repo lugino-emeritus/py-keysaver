@@ -4,7 +4,7 @@ A master password is used to encrypt the data.
 
 
 ### New in Version 0.3.0:
-Complete redesign. To convert the old password file open the old keysaver `python -i keysaver_0-2-2.py`, then call `convert_pw_dic()`. **keysaver_0-2-2.py will be removed soon!**
+Complete redesign. To convert the old password file open the old keysaver `python -i keysaver_0-2-2.py`, then call `convert_pw_dic()`. **keysaver_0-2-2.py will be removed in the next update!**
 
 
 #### Dependencies:
@@ -13,7 +13,7 @@ Complete redesign. To convert the old password file open the old keysaver `pytho
 - msgpack `pip install msgpack`
 - pyperclip `pip install pyperclip`
 - tabulate `pip install tabulate`
-- `ntlib.fctthread`, available [here](https://github.com/lugino-emeritus/py-ntlib)
+- `ntlib.fctthread` from [ntlib](https://github.com/lugino-emeritus/py-ntlib)
 
 
 ## Usage
@@ -31,8 +31,9 @@ The following commands are probably self-explanatory. `name` is the name of a pa
 - `move_pw_line(name)`: rename the pw_line
 - `edit_pw_line(name)`
 - `list_pw_lines(keys=('description', 'username'))`: shows names and info for all saved password-lines. `keys=None` will show all keywords.
-- `show_pw(name)`
-- `copy_pw(name)`
+- `pw_info(name)`: show all information assigned to the `pw_line` by `edit_pw_line`
+- `show_pw(name, info=False)`
+- `copy_pw(name, info=False)`
 - `change_pw(name)`
 
 To change the master password call `change_mpw()`.

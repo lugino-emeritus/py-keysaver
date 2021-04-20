@@ -23,11 +23,11 @@ import os
 import pyperclip
 import time
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.backends import default_backend as ht_backend
 from cryptography.hazmat.primitives.ciphers import (
 		Cipher as HtCipher, algorithms as ht_algorithms, modes as ht_modes)
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM as HtAesGcm
-from cryptography.exceptions import InvalidTag
 
 from getpass import getpass
 from random import SystemRandom as _SystemRandom
@@ -35,8 +35,8 @@ from tabulate import tabulate
 
 from ntlib.fctthread import ThreadLoop
 
-__version__ = '0.3.6'
 __author__ = 'NTI (lugino-emeritus) <*@*.de>'
+__version__ = '0.3.9'
 
 FILENAME = "pwdic"
 PW_DEFAULT_LEN = 12
@@ -57,7 +57,7 @@ sys_randint = _SystemRandom().randint  # returns n with a <= n <= b
 def pw_lifetime():
 	return 86400 * sys_randint(400, 600)
 
-_salt_count = int.from_bytes(os.urandom(4), 'little')
+_salt_count = sys_randint(0, 2**32-1)
 def gen_salt(n):
 	global _salt_count
 	if n <= 10:
@@ -67,45 +67,28 @@ def gen_salt(n):
 
 #-------------------------------------------------------
 
-def _get_number(i):
-	assert 0 <= i <= 9
-	return chr(48 + i)
-def _get_uppercase(i):
-	assert 0 <= i <= 25
-	return chr(65 + i)
-def _get_lowercase(i):
-	assert 0 <= i <= 25
-	return chr(97 + i)
-def _get_symbol(i):
-	assert 0 <= i <= 27
-	# do not use all possible symbols: ^, ', ", `
-	return r'!#$%&()*+,-./:;<=>?@[\]_{|}~'[i]
+_RAND_CHARS = r'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+_RAND_SYMBOLS = r'!#$%&()*+,-./:;<=>?@[\]_{|}~'
 
-def _get_char(i): # 0 <= i <= 89 = 26 + 26 + 10 + 28 - 1
-	if i < 26:
-		return _get_lowercase(i)
-	elif i < 52:
-		return _get_uppercase(i-26)
-	elif i < 62:
-		return _get_number(i-52)
-	elif i < 90:
-		return _get_symbol(i-62)
-	raise ValueError('_get_char int too high (valid range: 0 <= i <= 89)')
+def _mix_list(x):
+	n = len(x) - 1
+	for i in range(n):
+		j = sys_randint(i, n)
+		(x[i], x[j]) = (x[j], x[i])
+	return x
 
-def gen_rand_pw(n=PW_DEFAULT_LEN):
+def gen_rand_pw(n=PW_DEFAULT_LEN, *, symbols=_RAND_SYMBOLS):
+	chars = _RAND_CHARS + symbols
+	m = len(chars) - 1
 	if n < 6:
-		return ''.join(_get_char(sys_randint(0, 89)) for _ in range(n))
+		return ''.join(chars[sys_randint(0,m)] for _ in range(n))
 
-	pwl = [_get_lowercase(sys_randint(0, 25)),
-			_get_uppercase(sys_randint(0, 25)),
-			_get_number(sys_randint(0, 9)),
-			_get_symbol(sys_randint(0, 27))]
-	pwl.extend(_get_char(sys_randint(0, 89)) for _ in range(n-4))
-
-	for i in range(n-1):
-		j = sys_randint(i, n-1)
-		(pwl[i], pwl[j]) = (pwl[j], pwl[i])
-	return ''.join(pwl)
+	pw = [chars[sys_randint(0,9)], chars[sys_randint(10,35)], chars[sys_randint(36,61)]]
+	if symbols:
+		pw.append(symbols[sys_randint(0, len(symbols)-1)])
+	n -= len(pw)
+	pw.extend(chars[sys_randint(0, m)] for _ in range(n))
+	return ''.join(_mix_list(pw))
 
 #-------------------------------------------------------
 
@@ -128,7 +111,7 @@ def _read_new_pw():
 	return pw.encode()
 
 def _read_rand_pw():
-	data = input(f'To generate random password enter length > 0, 1 means default length ({PW_DEFAULT_LEN:d}): ')
+	data = input(f'To generate random password enter length > 0, 1 means default length ({PW_DEFAULT_LEN}): ')
 	if data:
 		try:
 			n = int(data)
@@ -378,11 +361,25 @@ def get_pw(name):
 	#return pw as string
 	return _decrypt_data(dic_saver.get_token(), pw_dic[name]['enc_data'], method=dic_saver.method).decode()
 
-def show_pw(name):
-	print(f"username: {pw_dic[name]['info']['username']}, password: {get_pw(name)}")
-def copy_pw(name):
+def pw_info(name):
+	print(tabulate(sorted(pw_dic[name]['info'].items())))
+
+def show_pw(name, info=False):
+
+	pw = get_pw(name)
+	if info:
+		pw_info(name)
+		print(f'password: {pw}')
+	else:
+		print(f"username: {pw_dic[name]['info']['username']}, password: {pw}")
+
+def copy_pw(name, info=False):
 	pyperclip.copy(get_pw(name))
-	print(f"username: {pw_dic[name]['info']['username']}, password copied")
+	if info:
+		pw_info(name)
+		print('password copied')
+	else:
+		print(f"username: {pw_dic[name]['info']['username']}, password copied")
 
 def change_pw(name):
 	if _yes_no_question('Show current password? '):
@@ -396,7 +393,8 @@ def add_pw_line(name):
 		return
 	pw_info = {}
 	pw_info['username'] = input('Username: ')
-	pw_info['description'] = input('Description: ')
+	d = input('Description: ')
+	if d: pw_info['description'] = d
 	pw = _read_rand_pw()
 	while _yes_no_question('Do you want to add additional information? '):
 		x = input('Enter name of new key: ')
@@ -405,6 +403,7 @@ def add_pw_line(name):
 	set_pw(name, pw)
 
 def delete_pw_line(name):
+	pw_info(name)
 	if _yes_no_question(f'Do you really want to delete {name}? '):
 		del pw_dic[name]
 		save_dic()
@@ -425,18 +424,20 @@ def move_pw_line(name):
 	save_dic()
 
 def edit_pw_line(name):
-	pw_info = pw_dic[name]['info']
-	print(tabulate(sorted(pw_info.items())))
-	while _yes_no_question('Do you want to add / change keys? '):
-		x = input('Enter name of key: ')
+	pw_info(name)
+	info = pw_dic[name]['info']
+	while True:
+		x = input('Enter name of (new) key: ')
+		if not x:
+			break
 		y = input(f"Enter {x} ('DEL' will delete the key): ")
 		if y == 'DEL':
-			if x in pw_info:
-				del pw_info[x]
+			if x in info:
+				del info[x]
 			else:
 				print('key does not exist')
 		else:
-			pw_info[x] = y
+			info[x] = y
 	save_dic()
 
 
@@ -445,12 +446,12 @@ def list_pw_lines(keys=('description', 'username')):
 	To show all available info call list_pw_lines(None)
 	'''
 	if not keys:
-		keys = tuple(sorted(set(k for v in pw_dic.values() for k in v['info'])))
+		keys = sorted(set(k for v in pw_dic.values() for k in v['info']))
 	elif isinstance(keys, str):
 		keys = (keys,)
 	arr = tuple((name,) + tuple(val['info'].get(k, '') for k in keys)
 			for name, val in sorted(pw_dic.items()))
-	print(tabulate(arr, headers=(('name',) + keys)))
+	print(tabulate(arr, headers=(('name',) + tuple(keys))))
 
 
 def check_lifetimes():
