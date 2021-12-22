@@ -1,8 +1,9 @@
-'''
+#!/usr/bin/python3 -i
+"""
 file syntax:
 	- version (2 byte), b'\x00\x01'
 	- encryption method (2 bytes):
-		b'\x00\x01':
+		- b'\x00\x01':
 			- argon2id to expand pw to 32 byte key with 32 byte salt
 			- 32 byte salt to derive a master token = sha256(salt + pw)
 			- AES GCM global encryption with 12 byte nonce
@@ -13,14 +14,14 @@ file syntax:
 pwdic['name'] = {'info': {"description": "a description", "username": "user"},
                   'update_ts': 1234567890,
                   'enc_data': b'salt and encrypted password'}
-'''
+"""
 import argon2
 import datetime
 import hashlib
 import msgpack
 import os
-import sys
 import pyperclip
+import sys
 import time
 
 from cryptography.exceptions import InvalidTag
@@ -36,7 +37,7 @@ from tabulate import tabulate
 from ntlib.fctthread import ThreadLoop
 
 __author__ = 'NTI (lugino-emeritus) <*@*.de>'
-__version__ = '0.3.12'
+__version__ = '0.3.13'
 
 FILENAME = "pwdic"
 PW_DEFAULT_LEN = 12
@@ -437,9 +438,11 @@ def edit_pw_line(name):
 
 
 def list_pw_lines(keys=('description', 'username')):
-	'''Show all password lines with keys, default: description and username
-	To show all available info call list_pw_lines(None)
-	'''
+	"""Show all password lines with keys.
+
+	Default keys: description, username
+	to show all available info call list_pw_lines(None)
+	"""
 	if not keys:
 		keys = sorted(set(k for v in pwdic.values() for k in v['info']))
 	elif isinstance(keys, str):
@@ -451,7 +454,7 @@ def list_pw_lines(keys=('description', 'username')):
 
 def check_lifetimes():
 	now = int(utc_ts())
-	to_update = tuple(name for name, v in pwdic.items() if v['update_ts'] < now)
+	to_update = tuple(name for (name, v) in pwdic.items() if v['update_ts'] < now)
 	if not (to_update and _yes_no_question('There are passwords to renew. Renew them now? ')):
 		return
 	for name in to_update:
