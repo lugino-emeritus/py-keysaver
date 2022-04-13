@@ -6,7 +6,7 @@ A master password is used to encrypt the data. Technical details can be found in
 
 #### Dependencies
 
-- python 3.6 or newer
+- python3.8 or newer
 - argon2 `pip install argon2-cffi`
 - msgpack `pip install msgpack`
 - pyperclip `pip install pyperclip`
