@@ -1,5 +1,6 @@
 #!/usr/bin/python3 -i
-"""
+"""Module to store and generate passwords.
+
 file syntax:
 	- version (2 byte), b'\x00\x01'
 	- encryption method (2 bytes):
@@ -11,10 +12,10 @@ file syntax:
 	- dictionary stored as msgpack
 	- MAC of AES GCM with aad over version, method and salt
 
-pwdic['name'] = {'info': {"description": "a description", "username": "user"},
-                  'update_ts': 1234567890,
-                  'enc_data': b'salt and encrypted password'}
+pwdic['name'] = {'info': {'description': 'a description', 'username': 'user', 'website': 'https://login.de'},
+                  'update_ts': 1234567890, 'enc_data': b'salt and encrypted password'}
 """
+
 import argon2
 import datetime
 import hashlib
@@ -23,6 +24,7 @@ import os
 import pyperclip
 import sys
 import time
+import webbrowser
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.backends import default_backend as ht_backend
@@ -31,13 +33,13 @@ from cryptography.hazmat.primitives.ciphers import (
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM as HtAesGcm
 
 from getpass import getpass
+from ntlib.fctthread import ThreadLoop
 from random import SystemRandom as _SystemRandom
 from tabulate import tabulate
 
-from ntlib.fctthread import ThreadLoop
 
 __author__ = 'NTI (lugino-emeritus) <*@*.de>'
-__version__ = '0.3.13'
+__version__ = '0.3.14'
 
 FILENAME = "pwdic"
 PW_DEFAULT_LEN = 12
@@ -55,11 +57,11 @@ def _utc_msts48():
 
 sys_randint = _SystemRandom().randint  # returns n with a <= n <= b
 
-def pw_lifetime():
+def _rand_lifetime():
 	return sys_randint(400*86400, 600*86400)
 
 _salt_count = sys_randint(0, 2**32-1)
-def gen_salt(n):
+def _gen_salt(n):
 	global _salt_count
 	if n <= 10:
 		return os.urandom(n)
@@ -134,7 +136,7 @@ def _read_rand_pw():
 class crypto:
 	# static namespace class for cryptography methods
 	def aes_cbc_encrypt(key, data):
-		iv = gen_salt(16)
+		iv = _gen_salt(16)
 		data += b'\x80' + b'\x00' * ((15 - len(data)) % 16)
 		encryptor = HtCipher(ht_algorithms.AES(key), ht_modes.CBC(iv), ht_backend()).encryptor()
 		return iv + encryptor.update(data) + encryptor.finalize()
@@ -146,7 +148,7 @@ class crypto:
 		return data.rpartition(b'\x80')[0]
 
 	def aes_gcm_encrypt(key, data, aad=b''):
-		iv = gen_salt(12)
+		iv = _gen_salt(12)
 		return iv + HtAesGcm(key).encrypt(iv, data, aad)
 
 	def aes_gcm_decrypt(key, data, aad=b''):
@@ -178,7 +180,7 @@ class DicSaver:
 			self._enc_salt = b''
 			self._enc_key = b''
 		elif self._method == b'\x00\x01':
-			self._enc_salt = gen_salt(32)
+			self._enc_salt = _gen_salt(32)
 			self._enc_key = crypto.argon2_param1_hash(pw, self._enc_salt)
 		else:
 			raise KeyError(f'method {self._method} unknown')
@@ -268,7 +270,7 @@ class DicSaver:
 		if self._method == b'\x00\x00':
 			self._token_data = b''
 		elif self._method == b'\x00\x01':
-			self._token_data = gen_salt(32)
+			self._token_data = _gen_salt(32)
 		else:
 			raise KeyError(f'method {self._method} unknown')
 
@@ -351,7 +353,7 @@ def change_mpw(method=_ENC_METHOD):
 def set_pw(name, pw):
 	#pw must be a byte-like object
 	pwdic[name]['enc_data'] = _encrypt_data(dic_saver.get_token(), pw, method=dic_saver.method)
-	pwdic[name]['update_ts'] = int(utc_ts()) + pw_lifetime()
+	pwdic[name]['update_ts'] = int(utc_ts()) + _rand_lifetime()
 	save_dic()
 def get_pw(name):
 	#return pw as string
@@ -361,7 +363,6 @@ def pw_info(name):
 	print(tabulate(sorted(pwdic[name]['info'].items())))
 
 def show_pw(name, info=False):
-
 	pw = get_pw(name)
 	if info:
 		pw_info(name)
@@ -377,6 +378,15 @@ def copy_pw(name, info=False):
 	else:
 		print(f"username: {pwdic[name]['info']['username']}, password copied")
 
+def open_pw(name):
+	info = pwdic[name]['info']
+	website = info['website']
+	pw = get_pw(name)
+	username = info['username']
+	webbrowser.open(website)
+	pyperclip.copy(pw)
+	print(f'username: {username}, password copied')
+
 def change_pw(name):
 	if _yes_no_question('Show current password? '):
 		show_pw(name)
@@ -389,8 +399,10 @@ def add_pw_line(name):
 		return
 	pw_info = {}
 	pw_info['username'] = input('Username: ')
-	d = input('Description: ')
-	if d: pw_info['description'] = d
+	x = input('Website (optional): ')
+	if x: pw_info['website'] = x
+	x = input('Description (optional): ')
+	if x: pw_info['description'] = x
 	pw = _read_rand_pw()
 	while _yes_no_question('Do you want to add additional information? '):
 		x = input('Enter name of new key: ')
@@ -437,19 +449,25 @@ def edit_pw_line(name):
 	save_dic()
 
 
-def list_pw_lines(keys=('description', 'username')):
+def list_pw_lines(keys=('username', 'website', 'description')):
 	"""Show all password lines with keys.
 
-	Default keys: description, username
+	Default keys: username, website, description
 	to show all available info call list_pw_lines(None)
 	"""
 	if not keys:
 		keys = sorted(set(k for v in pwdic.values() for k in v['info']))
 	elif isinstance(keys, str):
 		keys = (keys,)
-	arr = tuple((name,) + tuple(val['info'].get(k, '') for k in keys)
-			for name, val in sorted(pwdic.items()))
-	print(tabulate(arr, headers=(('name',) + tuple(keys))))
+	a = []
+	for name, val in pwdic.items():
+		info = pwdic[name]['info']
+		l = [name]
+		l.extend(info.get(k, '') for k in keys)
+		a.append(l)
+	headers = ['NAME']
+	headers.extend(keys)
+	print(tabulate(a, headers=headers))
 
 
 def check_lifetimes():
@@ -461,7 +479,7 @@ def check_lifetimes():
 		if _yes_no_question(f'The lifetime of {name} expired. Do you want to change the password? '):
 			change_pw(name)
 		elif _yes_no_question('Do you want to extend the lifetime? '):
-			pwdic[name]['update_ts'] = now + pw_lifetime()
+			pwdic[name]['update_ts'] = now + _rand_lifetime()
 			save_dic()
 
 #-------------------------------------------------------

@@ -1,6 +1,6 @@
 # Python KeySaver
 
-This is a small tool to create random passwords and save them in pwdic.
+This is a small tool to create random passwords and store them in a file (`pwdic`).
 A master password is used to encrypt the data. Technical details can be found in the source.
 
 
@@ -16,7 +16,7 @@ A master password is used to encrypt the data. Technical details can be found in
 
 ## Usage
 
-Start the script with `python -i keysaver.py [<pwdic>]` or `./keysaver.py [<pwdic>]`. It will open or create an encrypted file `<pwdic>` where your passwords are stored.
+Start the script with `python3 -i keysaver.py [<pwdic>]` or `./keysaver.py [<pwdic>]`. It will open or create an encrypted file `<pwdic>` where your passwords are stored.
 
 After 5 minutes without interaction you have to enter the master password again.
 
@@ -36,6 +36,7 @@ The following commands are probably self-explanatory. `name` is the name of a pa
 - `pw_info(name)`: show all information assigned to `name`
 - `show_pw(name, info=False)`
 - `copy_pw(name, info=False)`
+- `open_pw(name)`: open website if available and copy password to clipboard
 - `change_pw(name)`
 
 To change the master password call `change_mpw()`.
