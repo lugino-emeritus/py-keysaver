@@ -39,7 +39,7 @@ from tabulate import tabulate
 
 
 __author__ = 'NTI (lugino-emeritus) <*@*.de>'
-__version__ = '0.3.14'
+__version__ = '0.3.15'
 
 FILENAME = "pwdic"
 PW_DEFAULT_LEN = 12
@@ -73,7 +73,8 @@ def _gen_salt(n):
 _RAND_CHARS = r'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 _RAND_SYMBOLS = r'!#$%&()*+,-./:;<=>?@[\]_{|}~'
 
-def _mix_list(x):
+def _list_shuffle(x):
+	# not use random.shuffle (probably no system random generator)
 	n = len(x) - 1
 	for i in range(n):
 		j = sys_randint(i, n)
@@ -91,7 +92,7 @@ def gen_rand_pw(n=PW_DEFAULT_LEN, symbols=_RAND_SYMBOLS):
 		pw.append(symbols[sys_randint(0, len(symbols)-1)])
 	n -= len(pw)
 	pw.extend(chars[sys_randint(0, m)] for _ in range(n))
-	return ''.join(_mix_list(pw))
+	return ''.join(_list_shuffle(pw))
 
 #-------------------------------------------------------
 
@@ -460,7 +461,7 @@ def list_pw_lines(keys=('username', 'website', 'description')):
 	elif isinstance(keys, str):
 		keys = (keys,)
 	a = []
-	for name, val in pwdic.items():
+	for name in sorted(pwdic):
 		info = pwdic[name]['info']
 		l = [name]
 		l.extend(info.get(k, '') for k in keys)
