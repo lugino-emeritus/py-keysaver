@@ -9,6 +9,8 @@ file syntax:
 			- 32 byte salt to derive a master token = sha256(salt + pw)
 			- AES GCM global encryption with 12 byte nonce
 			- AES CBC for passwords: 16 byte iv, token as key, no MAC
+		- b'\x00\x02':
+			as above, but with different argon2id params'
 	- dictionary stored as msgpack
 	- MAC of AES GCM with aad over version, method and salt
 
@@ -39,7 +41,7 @@ from tabulate import tabulate
 
 
 __author__ = 'NTI (lugino-emeritus) <*@*.de>'
-__version__ = '0.3.15'
+__version__ = '0.3.16'
 
 FILENAME = "pwdic"
 PW_DEFAULT_LEN = 12
@@ -50,18 +52,18 @@ _ENC_METHOD = b'\x00\x01'
 
 #-------------------------------------------------------
 
-def utc_ts():
+def utc_ts() -> float:
 	return datetime.datetime.now(tz=datetime.timezone.utc).timestamp()
-def _utc_msts48():
+def _utc_msts48() -> int:
 	return int(utc_ts() * 1000) & (2**48-1)
 
 sys_randint = _SystemRandom().randint  # returns n with a <= n <= b
 
-def _rand_lifetime():
+def _rand_lifetime() -> int:
 	return sys_randint(400*86400, 600*86400)
 
 _salt_count = sys_randint(0, 2**32-1)
-def _gen_salt(n):
+def _gen_salt(n: int) -> bytes:
 	global _salt_count
 	if n <= 10:
 		return os.urandom(n)
@@ -73,7 +75,7 @@ def _gen_salt(n):
 _RAND_CHARS = r'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 _RAND_SYMBOLS = r'!#$%&()*+,-./:;<=>?@[\]_{|}~'
 
-def _list_shuffle(x):
+def _list_shuffle(x: list) -> list:
 	# not use random.shuffle (probably no system random generator)
 	n = len(x) - 1
 	for i in range(n):
@@ -81,7 +83,7 @@ def _list_shuffle(x):
 		(x[i], x[j]) = (x[j], x[i])
 	return x
 
-def gen_rand_pw(n=PW_DEFAULT_LEN, symbols=_RAND_SYMBOLS):
+def gen_rand_pw(n: int = PW_DEFAULT_LEN, symbols: str = _RAND_SYMBOLS) -> str:
 	chars = _RAND_CHARS + symbols
 	m = len(chars) - 1
 	if n < 6:
@@ -96,7 +98,7 @@ def gen_rand_pw(n=PW_DEFAULT_LEN, symbols=_RAND_SYMBOLS):
 
 #-------------------------------------------------------
 
-def _yes_no_question(s):
+def _yes_no_question(s: str) -> bool:
 	yes = {'yes', 'y', 'j', 'ja'}
 	no = {'no', 'n', 'nein'}
 	while True:
@@ -108,7 +110,7 @@ def _yes_no_question(s):
 		else:
 			print("respond with 'yes' or 'no'")
 
-def _read_new_pw():
+def _read_new_pw() -> bytes:
 	pw = getpass('Enter new password: ')
 	while True:
 		while not pw:
@@ -117,7 +119,7 @@ def _read_new_pw():
 			return pw.encode()
 		pw = getpass('Passwords does not match, try again: ')
 
-def _read_rand_pw():
+def _read_rand_pw() -> bytes:
 	data = input(f'To generate random password enter length > 0, 1 means default length ({PW_DEFAULT_LEN}): ')
 	if data:
 		try:
@@ -136,35 +138,46 @@ def _read_rand_pw():
 
 class crypto:
 	# static namespace class for cryptography methods
-	def aes_cbc_encrypt(key, data):
+	@staticmethod
+	def aes_cbc_encrypt(key: bytes, data: bytes):
 		iv = _gen_salt(16)
 		data += b'\x80' + b'\x00' * ((15 - len(data)) % 16)
 		encryptor = HtCipher(ht_algorithms.AES(key), ht_modes.CBC(iv), ht_backend()).encryptor()
 		return iv + encryptor.update(data) + encryptor.finalize()
 
-	def aes_cbc_decrypt(key, data):
+	@staticmethod
+	def aes_cbc_decrypt(key: bytes, data: bytes):
 		iv, data = data[:16], data[16:]
 		decryptor = HtCipher(ht_algorithms.AES(key), ht_modes.CBC(iv), ht_backend()).decryptor()
 		data = decryptor.update(data) + decryptor.finalize()
 		return data.rpartition(b'\x80')[0]
 
-	def aes_gcm_encrypt(key, data, aad=b''):
+	@staticmethod
+	def aes_gcm_encrypt(key: bytes, data: bytes, aad: bytes = b''):
 		iv = _gen_salt(12)
 		return iv + HtAesGcm(key).encrypt(iv, data, aad)
 
-	def aes_gcm_decrypt(key, data, aad=b''):
+	@staticmethod
+	def aes_gcm_decrypt(key: bytes, data: bytes, aad: bytes = b''):
 		iv, data = data[:12], data[12:]
 		return HtAesGcm(key).decrypt(iv, data, aad)
 
-	def argon2_param1_hash(key, salt):
+	@staticmethod
+	def argon2_param1_hash(key: bytes, salt: bytes):
 		return argon2.low_level.hash_secret_raw(
 			type=argon2.Type.ID, secret=key, salt=salt, hash_len=32,
 			time_cost=4, parallelism=4, memory_cost=524288)
 
+	@staticmethod
+	def argon2_param2_hash(key: bytes, salt: bytes):
+		return argon2.low_level.hash_secret_raw(
+			type=argon2.Type.ID, secret=key, salt=salt, hash_len=32,
+			time_cost=8, parallelism=8, memory_cost=1048576)
+
 #-------------------------------------------------------
 
 class DicSaver:
-	def __init__(self, filename):
+	def __init__(self, filename: str):
 		self.filename = filename
 		self._method = None
 		self._enc_salt = None
@@ -173,36 +186,41 @@ class DicSaver:
 		self._token = None
 
 	@property
-	def method(self):
+	def method(self) -> bytes:
 		return self._method
 
-	def _refresh_pw(self, pw):
+	def _refresh_pw(self, pw: bytes) -> None:
 		if self._method == b'\x00\x00':
 			self._enc_salt = b''
 			self._enc_key = b''
 		elif self._method == b'\x00\x01':
 			self._enc_salt = _gen_salt(32)
 			self._enc_key = crypto.argon2_param1_hash(pw, self._enc_salt)
+		elif self._method == b'\x00\x02':
+			self._enc_salt = _gen_salt(32)
+			self._enc_key = crypto.argon2_param2_hash(pw, self._enc_salt)
 		else:
 			raise KeyError(f'method {self._method} unknown')
 
-	def _check_pw(self, pw):
+	def _check_pw(self, pw: bytes) -> bool:
 		if self._method == b'\x00\x00':
 			return True
 		elif self._method == b'\x00\x01':
 			return crypto.argon2_param1_hash(pw, self._enc_salt) == self._enc_key
+		elif self._method == b'\x00\x02':
+			return crypto.argon2_param2_hash(pw, self._enc_salt) == self._enc_key
 		else:
 			raise KeyError(f'method {self._method} unknown')
 
-	def _set_token(self, pw):
+	def _set_token(self, pw: bytes) -> None:
 		if self._method == b'\x00\x00':
 			self._token = b''
-		elif self._method == b'\x00\x01':
+		elif self._method in {b'\x00\x01', b'\x00\x02'}:
 			self._token = hashlib.sha256(self._token_data + pw).digest()
 		else:
 			raise KeyError(f'method {self._method} unknown')
 
-	def get_token(self):
+	def get_token(self) -> bytes:
 		if self._token is None:
 			pw = getpass('Enter master password: ').encode()
 			while not self._check_pw(pw):
@@ -211,13 +229,13 @@ class DicSaver:
 		return self._token
 
 
-	def read(self):
+	def read(self) -> dict[str, dict]:
 		with open(self.filename, 'rb') as f:
 			data = f.read()
 		version, self._method, data = data[:2], data[2:4], data[4:]
 		if version != _VERSION:
 			raise Exception('version not supported')
-		salt_len = {b'\x00\x00': 0, b'\x00\x01': 32}[self._method]
+		salt_len = {b'\x00\x00': 0, b'\x00\x01': 32, b'\x00\x02': 32}[self._method]
 		salt, data = data[:salt_len], data[salt_len:]
 		aad = _VERSION + self._method + salt
 
@@ -230,6 +248,10 @@ class DicSaver:
 					key = crypto.argon2_param1_hash(pw, salt)
 					data = crypto.aes_gcm_decrypt(key, data, aad)
 					self._token_data, data = data[:32], data[32:]
+				elif self._method == b'\x00\x02':
+					key = crypto.argon2_param2_hash(pw, salt)
+					data = crypto.aes_gcm_decrypt(key, data, aad)
+					self._token_data, data = data[:32], data[32:]
 				else:
 					raise KeyError(f'method {self._method} unknown')
 				break
@@ -240,13 +262,13 @@ class DicSaver:
 		self._set_token(pw)
 		return msgpack.unpackb(data, raw=False)
 
-	def save(self, dic):
+	def save(self, dic: dict) -> None:
 		data = msgpack.packb(dic, use_bin_type=True)
 		aad = _VERSION + self._method + self._enc_salt
 
 		if self._method == b'\x00\x00':
 			pass
-		elif self._method == b'\x00\x01':
+		elif self._method in {b'\x00\x01', b'\x00\x02'}:
 			data = self._token_data + data
 			data = crypto.aes_gcm_encrypt(self._enc_key, data, aad)
 		else:
@@ -254,7 +276,7 @@ class DicSaver:
 		with open(self.filename, 'wb') as f:
 			f.write(aad + data)
 
-	def change_pw(self, *, method=None):
+	def change_pw(self, *, method: bytes|None = None) -> tuple[bytes, bytes]:
 		if self._enc_key:
 			pw = getpass('Enter current master password: ').encode()
 			while not self._check_pw(pw):
@@ -262,15 +284,12 @@ class DicSaver:
 			self._set_token(pw)
 
 		old_token = self._token
-		if method:
-			self._method = method
-		elif not self._method:
-			self._method = _ENC_METHOD
+		self._method = method or _ENC_METHOD
 		pw = _read_new_pw()
 
 		if self._method == b'\x00\x00':
 			self._token_data = b''
-		elif self._method == b'\x00\x01':
+		elif self._method in {b'\x00\x01', b'\x00\x02'}:
 			self._token_data = _gen_salt(32)
 		else:
 			raise KeyError(f'method {self._method} unknown')
@@ -281,12 +300,12 @@ class DicSaver:
 
 
 class TokenDicSaver(DicSaver):
-	def __init__(self, filename):
+	def __init__(self, filename: str):
 		super().__init__(filename)
 		self._alive_ts = 0
 		self._loop_ctl = ThreadLoop(self._loop)
 
-	def _loop(self):
+	def _loop(self) -> bool|None:
 		dt = self._alive_ts - time.time()
 		if dt > 30:
 			time.sleep(30)
@@ -296,12 +315,12 @@ class TokenDicSaver(DicSaver):
 			self._token = None
 			return True
 
-	def _set_token(self, pw):
+	def _set_token(self, pw: bytes) -> None:
 		super()._set_token(pw)
 		self._alive_ts = time.time() + TOKEN_EXPIRATION
 		self._loop_ctl.start()
 
-	def get_token(self):
+	def get_token(self) -> bytes:
 		if self._loop_ctl.is_alive():
 			ts = time.time() + TOKEN_EXPIRATION
 			if ts > self._alive_ts:
@@ -312,35 +331,35 @@ class TokenDicSaver(DicSaver):
 		return super().get_token()
 
 
-def _encrypt_data(token, data, *, method):
+def _encrypt_data(token, data: bytes, *, method: bytes) -> bytes:
 	if method == b'\x00\x00':
 		return data
-	elif method == b'\x00\x01':
+	elif method in {b'\x00\x01', b'\x00\x02'}:
 		return crypto.aes_cbc_encrypt(token, data)
 	else:
 		raise KeyError(f'method {method} unknown')
 
-def _decrypt_data(token, data, *, method):
+def _decrypt_data(token, data: bytes, *, method: bytes) -> bytes:
 	if method == b'\x00\x00':
 		return data
-	elif method == b'\x00\x01':
+	elif method in {b'\x00\x01', b'\x00\x02'}:
 		return crypto.aes_cbc_decrypt(token, data)
 	else:
 		raise KeyError(f'method {method} unknown')
 
 #-------------------------------------------------------
 
-def read_dic():
+def read_dic() -> None:
 	global pwdic
 	pwdic = dic_saver.read()
-def save_dic():
+def save_dic() -> None:
 	global pwdic
 	dic_saver.save(pwdic)
 
-def get_token():
+def get_token() -> bytes:
 	return dic_saver.get_token()
 
-def change_mpw(method=_ENC_METHOD):
+def change_mpw(method: bytes = _ENC_METHOD) -> None:
 	old_method = dic_saver.method
 	token, old_token = dic_saver.change_pw(method=method)
 	method = dic_saver.method
@@ -351,19 +370,19 @@ def change_mpw(method=_ENC_METHOD):
 
 #-------------------------------------------------------
 
-def set_pw(name, pw):
+def set_pw(name: str, pw: bytes) -> None:
 	#pw must be a byte-like object
 	pwdic[name]['enc_data'] = _encrypt_data(dic_saver.get_token(), pw, method=dic_saver.method)
 	pwdic[name]['update_ts'] = int(utc_ts()) + _rand_lifetime()
 	save_dic()
-def get_pw(name):
+def get_pw(name: str) -> str:
 	#return pw as string
 	return _decrypt_data(dic_saver.get_token(), pwdic[name]['enc_data'], method=dic_saver.method).decode()
 
-def pw_info(name):
+def pw_info(name: str) -> None:
 	print(tabulate(sorted(pwdic[name]['info'].items())))
 
-def show_pw(name, info=False):
+def show_pw(name: str, info: bool = False) -> None:
 	pw = get_pw(name)
 	if info:
 		pw_info(name)
@@ -371,7 +390,7 @@ def show_pw(name, info=False):
 	else:
 		print(f"username: {pwdic[name]['info']['username']}, password: {pw}")
 
-def copy_pw(name, info=False):
+def copy_pw(name: str, info: bool = False) -> None:
 	pyperclip.copy(get_pw(name))
 	if info:
 		pw_info(name)
@@ -379,7 +398,7 @@ def copy_pw(name, info=False):
 	else:
 		print(f"username: {pwdic[name]['info']['username']}, password copied")
 
-def open_pw(name):
+def open_pw(name: str) -> None:
 	info = pwdic[name]['info']
 	website = info['website']
 	pw = get_pw(name)
@@ -388,14 +407,14 @@ def open_pw(name):
 	pyperclip.copy(pw)
 	print(f'username: {username}, password copied')
 
-def change_pw(name):
+def change_pw(name: str) -> None:
 	if _yes_no_question('Show current password? '):
 		show_pw(name)
 	pw = _read_rand_pw()
 	set_pw(name, pw)
 
 
-def add_pw_line(name):
+def add_pw_line(name: str) -> None:
 	if name in pwdic and not _yes_no_question('Name already exists, overwrite? '):
 		return
 	pw_info = {}
@@ -411,13 +430,13 @@ def add_pw_line(name):
 	pwdic[name] = {'info': pw_info}
 	set_pw(name, pw)
 
-def delete_pw_line(name):
+def delete_pw_line(name: str) -> None:
 	pw_info(name)
 	if _yes_no_question(f'Do you really want to delete {name}? '):
 		del pwdic[name]
 		save_dic()
 
-def copy_pw_line(name):
+def copy_pw_line(name: str) -> None:
 	new_name = input('Enter new name: ')
 	if new_name in pwdic:
 		if not _yes_no_question('Name already exists, overwrite? '):
@@ -425,14 +444,14 @@ def copy_pw_line(name):
 	pwdic[new_name] = pwdic[name].copy()
 	save_dic()
 
-def move_pw_line(name):
+def move_pw_line(name: str) -> None:
 	new_name = input('Enter new name: ')
 	if new_name in pwdic and not _yes_no_question('Name already exists, overwrite? '):
 		return
 	pwdic[new_name] = pwdic.pop(name)
 	save_dic()
 
-def edit_pw_line(name):
+def edit_pw_line(name: str) -> None:
 	pw_info(name)
 	info = pwdic[name]['info']
 	while True:
@@ -450,13 +469,13 @@ def edit_pw_line(name):
 	save_dic()
 
 
-def list_pw_lines(keys=('username', 'website', 'description')):
+def list_pw_lines(keys: tuple[str,...]|list[str]|str|None = ('username', 'website', 'description')):
 	"""Show all password lines with keys.
 
 	Default keys: username, website, description
 	to show all available info call list_pw_lines(None)
 	"""
-	if not keys:
+	if keys is None:
 		keys = sorted(set(k for v in pwdic.values() for k in v['info']))
 	elif isinstance(keys, str):
 		keys = (keys,)
@@ -471,7 +490,7 @@ def list_pw_lines(keys=('username', 'website', 'description')):
 	print(tabulate(a, headers=headers))
 
 
-def check_lifetimes():
+def check_lifetimes() -> None:
 	now = int(utc_ts())
 	to_update = tuple(name for (name, v) in pwdic.items() if v['update_ts'] < now)
 	if not (to_update and _yes_no_question('There are passwords to renew. Renew them now? ')):

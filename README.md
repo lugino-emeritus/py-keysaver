@@ -40,3 +40,10 @@ The following commands are probably self-explanatory. `name` is the name of a pa
 - `change_pw(name)`
 
 To change the master password call `change_mpw()`.
+
+## Security
+
+For a higher complexity of your password you can use method `b'\x00\x02'`:
+```py
+change_mpw(b'\x00\x02')
+```
