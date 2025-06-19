@@ -14,16 +14,19 @@ file syntax:
 	- dictionary stored as msgpack
 	- MAC of AES GCM with aad over version, method and salt
 
-pwdic['name'] = {'info': {'description': 'a description', 'username': 'user', 'website': 'https://login.de'},
-                  'update_ts': 1234567890, 'enc_data': b'salt and encrypted password'}
+pwdic['name'] = {
+	'info': {'description': 'a description', 'username': 'user', 'website': 'https://login.de'},
+	'update_ts': 1234567890, 'enc_data': b'salt and encrypted password'
+}
 """
+__author__ = 'NTI (lugino-emeritus) <*@*.de>'
+__version__ = '0.3.18'
 
 import argon2
 import datetime
 import hashlib
 import msgpack
 import os
-import pyperclip
 import sys
 import time
 import webbrowser
@@ -31,7 +34,7 @@ import webbrowser
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.backends import default_backend as ht_backend
 from cryptography.hazmat.primitives.ciphers import (
-		Cipher as HtCipher, algorithms as ht_algorithms, modes as ht_modes)
+	Cipher as HtCipher, algorithms as ht_algorithms, modes as ht_modes)
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM as HtAesGcm
 
 from getpass import getpass
@@ -39,9 +42,10 @@ from ntlib.fctthread import ThreadLoop
 from random import SystemRandom as _SystemRandom
 from tabulate import tabulate
 
-
-__author__ = 'NTI (lugino-emeritus) <*@*.de>'
-__version__ = '0.3.16'
+try:
+	import pyperclip
+except ImportError:
+	print('pyperclip not found, copy commands not possible')
 
 FILENAME = "pwdic"
 PW_DEFAULT_LEN = 12
@@ -50,7 +54,7 @@ TOKEN_EXPIRATION = 300
 _VERSION = b'\x00\x01'
 _ENC_METHOD = b'\x00\x01'
 
-#-------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def utc_ts() -> float:
 	return datetime.datetime.now(tz=datetime.timezone.utc).timestamp()
@@ -70,7 +74,7 @@ def _gen_salt(n: int) -> bytes:
 	_salt_count = _salt_count+1 if _salt_count < 2**32-1 else 0
 	return b''.join((_utc_msts48().to_bytes(6, 'little'), _salt_count.to_bytes(4, 'little'), os.urandom(n-10)))
 
-#-------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 _RAND_CHARS = r'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 _RAND_SYMBOLS = r'!#$%&()*+,-./:;<=>?@[\]_{|}~'
@@ -87,16 +91,16 @@ def gen_rand_pw(n: int = PW_DEFAULT_LEN, symbols: str = _RAND_SYMBOLS) -> str:
 	chars = _RAND_CHARS + symbols
 	m = len(chars) - 1
 	if n < 6:
-		return ''.join(chars[sys_randint(0,m)] for _ in range(n))
+		return ''.join(chars[sys_randint(0, m)] for _ in range(n))
 
-	pw = [chars[sys_randint(0,9)], chars[sys_randint(10,35)], chars[sys_randint(36,61)]]
+	pw = [chars[sys_randint(0, 9)], chars[sys_randint(10, 35)], chars[sys_randint(36, 61)]]
 	if symbols:
 		pw.append(symbols[sys_randint(0, len(symbols)-1)])
 	n -= len(pw)
 	pw.extend(chars[sys_randint(0, m)] for _ in range(n))
 	return ''.join(_list_shuffle(pw))
 
-#-------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def _yes_no_question(s: str) -> bool:
 	yes = {'yes', 'y', 'j', 'ja'}
@@ -125,7 +129,8 @@ def _read_rand_pw() -> bytes:
 		try:
 			n = int(data)
 			if n:
-				if n == 1: n = PW_DEFAULT_LEN
+				if n == 1:
+					n = PW_DEFAULT_LEN
 				pw = gen_rand_pw(n)
 				if _yes_no_question('New password created, copy to clipboard? '):
 					pyperclip.copy(pw)
@@ -134,47 +139,47 @@ def _read_rand_pw() -> bytes:
 			pass
 	return _read_new_pw()
 
-#-------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 class crypto:
 	# static namespace class for cryptography methods
 	@staticmethod
-	def aes_cbc_encrypt(key: bytes, data: bytes):
+	def aes_cbc_encrypt(key: bytes, data: bytes) -> bytes:
 		iv = _gen_salt(16)
 		data += b'\x80' + b'\x00' * ((15 - len(data)) % 16)
 		encryptor = HtCipher(ht_algorithms.AES(key), ht_modes.CBC(iv), ht_backend()).encryptor()
 		return iv + encryptor.update(data) + encryptor.finalize()
 
 	@staticmethod
-	def aes_cbc_decrypt(key: bytes, data: bytes):
+	def aes_cbc_decrypt(key: bytes, data: bytes) -> bytes:
 		iv, data = data[:16], data[16:]
 		decryptor = HtCipher(ht_algorithms.AES(key), ht_modes.CBC(iv), ht_backend()).decryptor()
 		data = decryptor.update(data) + decryptor.finalize()
 		return data.rpartition(b'\x80')[0]
 
 	@staticmethod
-	def aes_gcm_encrypt(key: bytes, data: bytes, aad: bytes = b''):
+	def aes_gcm_encrypt(key: bytes, data: bytes, aad: bytes = b'') -> bytes:
 		iv = _gen_salt(12)
 		return iv + HtAesGcm(key).encrypt(iv, data, aad)
 
 	@staticmethod
-	def aes_gcm_decrypt(key: bytes, data: bytes, aad: bytes = b''):
+	def aes_gcm_decrypt(key: bytes, data: bytes, aad: bytes = b'') -> bytes:
 		iv, data = data[:12], data[12:]
 		return HtAesGcm(key).decrypt(iv, data, aad)
 
 	@staticmethod
-	def argon2_param1_hash(key: bytes, salt: bytes):
+	def argon2_param1_hash(key: bytes, salt: bytes) -> bytes:
 		return argon2.low_level.hash_secret_raw(
 			type=argon2.Type.ID, secret=key, salt=salt, hash_len=32,
 			time_cost=4, parallelism=4, memory_cost=524288)
 
 	@staticmethod
-	def argon2_param2_hash(key: bytes, salt: bytes):
+	def argon2_param2_hash(key: bytes, salt: bytes) -> bytes:
 		return argon2.low_level.hash_secret_raw(
 			type=argon2.Type.ID, secret=key, salt=salt, hash_len=32,
 			time_cost=8, parallelism=8, memory_cost=1048576)
 
-#-------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 class DicSaver:
 	def __init__(self, filename: str):
@@ -227,7 +232,6 @@ class DicSaver:
 				pw = getpass('Wrong password, try again: ').encode()
 			self._set_token(pw)
 		return self._token
-
 
 	def read(self) -> dict[str, dict]:
 		with open(self.filename, 'rb') as f:
@@ -347,7 +351,7 @@ def _decrypt_data(token, data: bytes, *, method: bytes) -> bytes:
 	else:
 		raise KeyError(f'method {method} unknown')
 
-#-------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def read_dic() -> None:
 	global pwdic
@@ -368,15 +372,15 @@ def change_mpw(method: bytes = _ENC_METHOD) -> None:
 		pwdic[name]['enc_data'] = _encrypt_data(token, pw, method=method)
 	save_dic()
 
-#-------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def set_pw(name: str, pw: bytes) -> None:
-	#pw must be a byte-like object
+	# pw must be a byte-like object
 	pwdic[name]['enc_data'] = _encrypt_data(dic_saver.get_token(), pw, method=dic_saver.method)
 	pwdic[name]['update_ts'] = int(utc_ts()) + _rand_lifetime()
 	save_dic()
 def get_pw(name: str) -> str:
-	#return pw as string
+	# return pw as string
 	return _decrypt_data(dic_saver.get_token(), pwdic[name]['enc_data'], method=dic_saver.method).decode()
 
 def pw_info(name: str) -> None:
@@ -422,7 +426,7 @@ def add_pw_line(name: str) -> None:
 	x = input('Website (optional): ')
 	if x: pw_info['website'] = x
 	x = input('Description (optional): ')
-	if x: pw_info['description'] = x
+	if x:	pw_info['description'] = x
 	pw = _read_rand_pw()
 	while _yes_no_question('Do you want to add additional information? '):
 		x = input('Enter name of new key: ')
@@ -469,7 +473,7 @@ def edit_pw_line(name: str) -> None:
 	save_dic()
 
 
-def list_pw_lines(keys: tuple[str,...]|list[str]|str|None = ('username', 'website', 'description')):
+def list_pw_lines(keys: tuple[str, ...]|list[str]|str|None = ('username', 'website', 'description')):
 	"""Show all password lines with keys.
 
 	Default keys: username, website, description
@@ -502,7 +506,7 @@ def check_lifetimes() -> None:
 			pwdic[name]['update_ts'] = now + _rand_lifetime()
 			save_dic()
 
-#-------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 if __name__ == '__main__':
 	filename = sys.argv[1] if len(sys.argv) > 1 else FILENAME
