@@ -357,7 +357,6 @@ def read_dic() -> None:
 	global pwdic
 	pwdic = dic_saver.read()
 def save_dic() -> None:
-	global pwdic
 	dic_saver.save(pwdic)
 
 def get_token() -> bytes:
@@ -426,7 +425,7 @@ def add_pw_line(name: str) -> None:
 	x = input('Website (optional): ')
 	if x: pw_info['website'] = x
 	x = input('Description (optional): ')
-	if x:	pw_info['description'] = x
+	if x: pw_info['description'] = x
 	pw = _read_rand_pw()
 	while _yes_no_question('Do you want to add additional information? '):
 		x = input('Enter name of new key: ')
